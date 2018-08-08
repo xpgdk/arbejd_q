@@ -2,10 +2,10 @@ defmodule ArbejdQ.Test.Repo.Migrations.AddTables do
   use Ecto.Migration
 
   def up do
-    ArbejdQ.Migrations.up
+    ArbejdQ.Migrations.V1.up
   end
 
   def down do
-    ArbejdQ.Migrations.down
+    ArbejdQ.Migrations.V1.down
   end
 end

@@ -1,6 +1,6 @@
-defmodule ArbejdQ.Migrations do
+defmodule ArbejdQ.Migrations.V1 do
   @moduledoc """
-  Database migations used by ArbejdQ.
+  Database migrations used by ArbejdQ version 1.
   """
 
   import Ecto.Migration
@@ -13,8 +13,11 @@ defmodule ArbejdQ.Migrations do
       add :parameters, :binary
       add :result, :binary
       add :progress, :binary
+      add :worker_pid, :binary
       add :status, :integer
       add :status_updated, :utc_datetime
+      add :expiration_time, :utc_datetime
+      add :completion_time, :utc_datetime
       add :lock_version, :integer
 
       timestamps()
