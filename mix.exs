@@ -38,7 +38,7 @@ defmodule ArbejdQ.Mixfile do
       {:timex, "~> 3.2"},
       {:timex_ecto, "~> 3.2"},
       {:postgrex, "~> 0.13.5", only: :test},
-      {:dialyxir, "~> 1.0.0-rc.3", runtime: false},
+      {:dialyxir, "~> 1.0.0-rc.3", only: :dev, runtime: false},
       {:ex_doc, "~> 0.18", only: :dev, runtime: false},
     ]
   end
