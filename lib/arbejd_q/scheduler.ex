@@ -8,12 +8,15 @@ defmodule ArbejdQ.Scheduler do
 
   use GenServer
 
-  alias ArbejdQ.Job
+  alias ArbejdQ.{
+    Execution,
+    Job
+  }
 
-  @type queue_config :: %{
+  @type queue_config :: [
     max_jobs: non_neg_integer,
     priority: non_neg_integer,
-  }
+  ]
 
   @type opts :: [
     queues: %{
@@ -30,15 +33,30 @@ defmodule ArbejdQ.Scheduler do
   }
 
   @typep state :: %{
-    queues: %{
-      required(atom) => queue_config
-    },
+    queues: [{:atom, queue_config}],
     max_jobs: non_neg_integer,
     poll_interval: non_neg_integer,
     workers: [worker],
     last_time_of_poll: DateTime.t,
     last_time_of_job_refresh: DateTime.t,
     last_time_of_stale_reset: DateTime.t,
+  }
+
+  @type global_scheduler_info :: %{
+    total_workers: non_neg_integer,
+    used_workers: non_neg_integer
+  }
+
+  @type per_queue_scheduler_info :: %{
+    total_slots: non_neg_integer,
+    used_slots: non_neg_integer
+  }
+
+  @type scheduler_info :: %{
+    global: global_scheduler_info,
+    queues: %{
+      required(atom) => per_queue_scheduler_info
+    }
   }
 
   @doc """
@@ -63,11 +81,27 @@ defmodule ArbejdQ.Scheduler do
     GenServer.start_link(__MODULE__, opts, gen_server_opts)
   end
 
+  @doc """
+  Start the scheduler.
+
+  See `start_link/2`.
+  """
+  @spec start(opts, GenServer.options) :: GenServer.on_start
+  def start(opts, gen_server_opts \\ []) do
+    GenServer.start(__MODULE__, opts, gen_server_opts)
+  end
+
   @spec stop(pid) :: :ok
   def stop(pid) do
     GenServer.stop(pid)
   end
 
+  @spec get_scheduler_info(pid) :: scheduler_info
+  def get_scheduler_info(pid) do
+    GenServer.call(pid, :get_scheduler_info)
+  end
+
+  ### GenServer Callback functions ###
   def init(opts) do
     queues =
       Keyword.get(opts, :queues, [])
@@ -89,17 +123,15 @@ defmodule ArbejdQ.Scheduler do
 
     restart_timer(initial_state)
 
-    IO.puts ">>>>>>>> Scheduler starting with PID #{inspect self()}"
     {:ok, initial_state}
-  end
-
-  def terminate(reason, _state) do
-    IO.puts "<<<<<<<< Scheduler with PID #{inspect self()} terminating with reason #{inspect reason}"
-    :ok
   end
 
   def handle_cast({:job_done, _job_id}, state) do
     {:noreply, state}
+  end
+
+  def handle_call(:get_scheduler_info, _sender, state) do
+    {:reply, calculate_scheduler_info(state), state}
   end
 
   def handle_info(:handle_timer, state) do
@@ -116,6 +148,8 @@ defmodule ArbejdQ.Scheduler do
     state = handle_worker_done(state, pid, reason)
     {:noreply, state}
   end
+
+  ### Internal functions ###
 
   defp maybe_handle_poll_timeout(state) do
     time_since_last_poll = Timex.diff(Timex.now, state.last_time_of_poll, :seconds)
@@ -149,8 +183,6 @@ defmodule ArbejdQ.Scheduler do
 
   @spec free_stale_jobs(state) :: state
   defp free_stale_jobs(state) do
-    IO.puts "Free stale jobs"
-
     state.queues
     |> Enum.each(fn {queue, _} ->
       stale_jobs = ArbejdQ.list_stale_jobs(to_string(queue))
@@ -163,7 +195,6 @@ defmodule ArbejdQ.Scheduler do
   @spec release_job(Job.t) :: :ok
   defp release_job(job) do
     try do
-      IO.puts "Releasing #{inspect job}"
       job
       |> Job.changeset(
         %{
@@ -181,7 +212,9 @@ defmodule ArbejdQ.Scheduler do
   @spec handle_poll_timeout(state) :: state
   @doc false
   def handle_poll_timeout(state) do
-    schedule_jobs(state)
+    state
+    |> schedule_jobs
+    |> cleanup_jobs
   end
 
   @spec handle_job_refresh(state) :: state
@@ -216,19 +249,68 @@ defmodule ArbejdQ.Scheduler do
     |> Enum.reduce(state, &fill_queue(&2, &1))
   end
 
+  @doc false
+  @spec cleanup_jobs(state) :: state
+  def cleanup_jobs(state) do
+    state.queues
+    |> Enum.reduce(state, &cleanup_queue(&2, &1))
+  end
+
+  @spec cleanup_queue(state, {atom, queue_config}) :: state
+  defp cleanup_queue(state, {queue, _config}) do
+
+    {_count, _removed} =
+      ArbejdQ.Job.list_expired_jobs(to_string(queue), Timex.now)
+      |> ArbejdQ.repo().delete_all()
+
+    state
+  end
+
+  @spec calculate_worker_numbers(state) :: global_scheduler_info
+  defp calculate_worker_numbers(state) do
+    %{
+      total_workers: max_workers(state),
+      used_workers: worker_count(state)
+    }
+  end
+
+  @spec calculate_queue_numbers(state, {atom, Keyword.t}) :: per_queue_scheduler_info
+  defp calculate_queue_numbers(state, {queue, config}) do
+    %{
+      used_slots: worker_count(state, queue),
+      total_slots: max_queue_jobs(config)
+    }
+  end
+
+  @doc false
+  @spec calculate_scheduler_info(state) :: scheduler_info
+  def calculate_scheduler_info(state) do
+    queues =
+      state.queues
+      |> Enum.map(fn
+        {queue, config} -> {queue, calculate_queue_numbers(state, {queue, config})}
+      end)
+      |> Map.new
+
+    %{
+      global: calculate_worker_numbers(state),
+      queues: queues
+    }
+  end
+
   @spec fill_queue(state, {atom, queue_config}) :: state
   defp fill_queue(state, {queue, config}) do
-    total_workers = max_workers(state)
-    used_workers = worker_count(state)
-    available_workers = total_workers - used_workers
-    used_slots = worker_count(state, queue)
-    total_slots = max_queue_jobs(config)
-    available_slots = min(total_slots - used_slots, available_workers)
+    workers = calculate_worker_numbers(state)
 
-    IO.puts "Used slots     : #{to_string used_slots}"
-    IO.puts "Total slots    : #{to_string total_slots}"
-    IO.puts "Aavailable wrks: #{to_string available_workers}"
-    IO.puts "Available slots: #{to_string available_slots}"
+    total_workers = workers.total_workers
+    used_workers = workers.used_workers
+    available_workers = total_workers - used_workers
+
+    queue_slots = calculate_queue_numbers(state, {queue, config})
+
+    used_slots = queue_slots.used_slots
+    total_slots = queue_slots.total_slots
+    available_slots = min(total_slots - used_slots, available_workers)
 
     jobs = ArbejdQ.list_queued_jobs(to_string(queue))
 
@@ -242,42 +324,38 @@ defmodule ArbejdQ.Scheduler do
   @spec try_execute_job({state, non_neg_integer}, Job.t, atom) :: {state, non_neg_integer}
   defp try_execute_job({state, 0}, _, _), do: {state, 0}
   defp try_execute_job({state, remaining_slots}, job, queue) do
-    try do
-      {:ok, job} =
-        Job.changeset(job, %{status: :running, status_updated: DateTime.utc_now})
-        |> ArbejdQ.repo().update()
-
+    with {:ok, job} <- Execution.take_job(job)
+    do
       scheduler_pid = self()
 
       {worker_pid, _} = spawn_monitor fn ->
-        IO.puts "Running job #{inspect job}"
-        result = job.worker_module.run(job.id, job.parameters)
-        IO.puts "Ran job #{inspect job}"
-        {:ok, job} = ArbejdQ.get_job(job.id)
-        commit_result(job, result)
+        {:ok, job, _result} = Execution.execute_job(job)
         GenServer.cast(scheduler_pid, {:job_done, job.id})
       end
 
-      worker = %{
-        pid: worker_pid,
-        queue: queue,
-        job_id: job.id,
-      }
+         worker = %{
+           pid: worker_pid,
+           queue: queue,
+           job_id: job.id,
+         }
 
-      state = %{state|
-        workers: [worker | state.workers]
-      }
+         state = %{state|
+           workers: [worker | state.workers]
+         }
 
-      {state, remaining_slots - 1}
-    rescue
-      Ecto.StaleEntryError ->
-        IO.puts "Job taken by someone else"
+         {state, remaining_slots - 1}
+    else
+      {:error, :taken} ->
         {state, remaining_slots}
     end
   end
 
   # Calculates the wait time.
-  # Returns it in milliseconds
+  # The resulting wait time is the minimum time until:
+  #  a) Check for new jobs (poll_interval).
+  #  b) Refresh running jobs status (ArbejdQ.stale_job_period/2).
+  #
+  # Returns wait time in milliseconds
   @spec wait_time(state) :: non_neg_integer
   defp wait_time(state) do
     now = Timex.now
@@ -291,6 +369,7 @@ defmodule ArbejdQ.Scheduler do
     wt
   end
 
+  @spec restart_timer(state) :: state
   defp restart_timer(state) do
     :timer.send_after(wait_time(state), :handle_timer)
 
@@ -316,7 +395,7 @@ defmodule ArbejdQ.Scheduler do
     |> Enum.count
   end
 
-  @spec max_queue_jobs(queue_config) :: non_neg_integer
+  @spec max_queue_jobs(Keyword.t) :: non_neg_integer
   defp max_queue_jobs(config) do
     Keyword.get(config, :max_jobs, 1)
   end
@@ -324,46 +403,6 @@ defmodule ArbejdQ.Scheduler do
   @spec max_workers(state) :: non_neg_integer
   defp max_workers(state) do
     Map.get(state, :max_jobs, 1)
-  end
-
-  @spec commit_result(Job.t, any) :: Job.t
-  defp commit_result(%Job{status: :running} = job, result) do
-    try do
-      {:ok, job} =
-        Job.changeset(job,
-                      %{
-                        status: :done,
-                        status_updated: DateTime.utc_now,
-                        result: result,
-                      }
-        )
-        |> ArbejdQ.repo().update
-      job
-    rescue
-      Ecto.StaleEntryError -> commit_result(ArbejdQ.repo().get(Job, job.id), result)
-    end
-  end
-  defp commit_result(job, _result) do
-    IO.puts "Result has already been posted for job #{job.id}"
-    job
-  end
-
-  @spec commit_failure(Job.t, any) :: Job.t
-  defp commit_failure(job, result) do
-    try do
-      {:ok, job} =
-        Job.changeset(job,
-                      %{
-                        status: :failed,
-                        status_updated: DateTime.utc_now,
-                        result: result,
-                      }
-        )
-        |> ArbejdQ.repo().update
-      job
-    rescue
-      Ecto.StaleEntryError -> commit_result(job, result)
-    end
   end
 
   @spec handle_worker_done(state, pid, any) :: state
@@ -383,14 +422,14 @@ defmodule ArbejdQ.Scheduler do
           reason ->
             # Failure means that the result may not have been reported
             {:ok, job} = ArbejdQ.get_job(worker.job_id)
-            commit_failure(job, reason)
+            Execution.commit_failure(job, reason)
 
             state
         end
     end
   end
 
-  @spec find_and_remove_worker(state, pid) :: {worker, state}
+  @spec find_and_remove_worker(state, pid) :: {worker | nil, state}
   defp find_and_remove_worker(state, pid) do
     worker = Enum.find(state.workers, fn w -> w.pid == pid end)
     workers = List.delete(state.workers, worker)

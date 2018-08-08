@@ -36,8 +36,11 @@ defmodule ArbejdQ.Job do
     field :parameters, Term
     field :result, Term
     field :progress, Term
+    field :worker_pid, Term
     field :status, ArbejdQ.Types.Status
     field :status_updated, :utc_datetime
+    field :expiration_time, :utc_datetime
+    field :completion_time, :utc_datetime
     field :lock_version, :integer, default: 1
 
     timestamps()
@@ -51,8 +54,11 @@ defmodule ArbejdQ.Job do
                      :parameters,
                      :result,
                      :progress,
+                     :worker_pid,
                      :status,
-                     :status_updated])
+                     :status_updated,
+                     :expiration_time,
+                     :completion_time])
     |> validate_required([:queue, :worker_module, :parameters])
     |> optimistic_lock(:lock_version)
   end
@@ -87,5 +93,12 @@ defmodule ArbejdQ.Job do
     from job in Job,
       where: job.queue == ^queue_name and job.status == ^:running,
       where: job.status_updated < ^stale_progress_timestamp
+  end
+
+  @spec list_expired_jobs(String.t, DateTime.t) :: %Ecto.Query{}
+  def list_expired_jobs(queue_name, expiration_time) do
+    from job in Job,
+      where: job.queue == ^queue_name and job.status in [^:done, ^:failed],
+      where: job.expiration_time < ^expiration_time
   end
 end

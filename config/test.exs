@@ -8,7 +8,8 @@ config :arbejd_q,
   repo: ArbejdQ.Test.Repo,
   update_interval: 1,
   stale_job_period: 5,
-  job_scan_interval: 1
+  job_scan_interval: 1,
+  default_expiration_duration: 5
 
 config :arbejd_q, ArbejdQ.Test.Repo,
   adapter: Ecto.Adapters.Postgres,

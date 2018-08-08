@@ -72,9 +72,21 @@ defmodule ArbejdQ do
   end
 
   @doc """
+  List all expired jobs within a queue.
+  """
+  @spec list_expired_jobs(String.t) :: [Job.t]
+  def list_expired_jobs(queue) do
+    Job.list_expired_jobs(queue, Timex.now)
+    |> repo().all()
+  end
+
+  @doc """
   Retrieve a job given its `job_id`.
   """
-  @spec get_job(String.t) :: {:ok, Job.t} | {:error, :not_found}
+  @spec get_job(String.t | Job.t) :: {:ok, Job.t} | {:error, :not_found}
+  def get_job(%Job{} = job) do
+    get_job(job.id)
+  end
   def get_job(job_id) do
     res = Job.get_job(job_id)
           |> repo().all()
@@ -94,12 +106,15 @@ defmodule ArbejdQ do
 
   Returns `{:ok, result}`, where `result` is the result of the job.
   """
-  @spec wait(String.t, non_neg_integer | :infinity) :: {:ok, any} | {:error, :timeout} | {:error, :not_found}
-  def wait(job_id, timeout \\ :infinity) do
+  @spec wait(String.t | Job.t, non_neg_integer | :infinity) :: {:ok, :failed | :done, any} | {:error, :timeout} | {:error, :not_found}
+  def wait(job, timeout \\ :infinity)
+  def wait(%Job{} = job, timeout), do: wait(job.id, timeout)
+  def wait(job_id, timeout) do
     with {:ok, job} <- get_job(job_id)
     do
       case job.status do
-        :done -> {:ok, job.result}
+        :done -> {:ok, :done, job.result}
+        :failed -> {:ok, :failed, job.result}
         _ ->
           Process.sleep(1_000)
           new_timeout =
@@ -135,6 +150,19 @@ defmodule ArbejdQ do
   @spec stale_job_period :: non_neg_integer
   def stale_job_period do
     Application.get_env(:arbejd_q, :stale_job_period, 60)
+  end
+
+  @doc """
+  The the default expiration duration of completed jobs.
+
+  The worker module is free to set the expiration time itself. If it does not,
+  this default value is used.
+  It is configured as the `:default_expiration_duration` option of `:arbejd_q`.
+  The default is one hour (60 * 60 seconds).
+  """
+  @spec default_expiration_duration :: non_neg_integer
+  def default_expiration_duration do
+    Application.get_env(:arbejd_q, :default_expiration_duration, 60 * 60)
   end
 
   @doc false

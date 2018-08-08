@@ -27,12 +27,11 @@ defmodule ArbejdQ.SchedulerTest do
         ],
       ])
 
-    IO.puts "Scheduler starter with #{inspect pid}"
 
-    #    on_exit fn ->
-    #      IO.puts "Stopping scheduler"
-    #      Scheduler.stop(pid)
-    #    end
+    on_exit fn ->
+      # Ensure that the Scheduler does not run after the test has been completed
+      Process.exit(pid, :kill)
+    end
 
     Map.merge(
       tags,
@@ -75,8 +74,12 @@ defmodule ArbejdQ.SchedulerTest do
                             %{
                               duration: 1
                             })
-      {:ok, result} = ArbejdQ.wait(job.id)
-      IO.inspect result
+      {:ok, :done, _result} = ArbejdQ.wait(job.id)
+
+      Process.sleep(6000)
+
+      # Expect job to be removed as it has a expiration_duration of 5 seconds
+      assert {:error, :not_found} = ArbejdQ.get_job(job)
     end
 
     test "Stale jobs", _tags do
@@ -93,8 +96,13 @@ defmodule ArbejdQ.SchedulerTest do
 
       # After 5 seconds, the Scheduler ought to free the job
       # and shortly thereafter execute it
-      {:ok, result} = ArbejdQ.wait(job.id)
-      IO.inspect result
+      {:ok, :done, result} = ArbejdQ.wait(job.id)
+      assert {:ok, 1} == result
+
+      Process.sleep(6000)
+
+      # Expect job to be removed as it has a expiration_duration of 5 seconds
+      assert {:error, :not_found} = ArbejdQ.get_job(job)
     end
 
     test "Concurrent results", _tags do
@@ -104,10 +112,15 @@ defmodule ArbejdQ.SchedulerTest do
                             %{
                               duration: 2
                             })
-      Process.sleep(1000)
+      # Wait long enough for the scheduler to start executing
+      # the job
+      Process.sleep(1200)
 
       {:ok, job} = ArbejdQ.get_job(job.id)
 
+      assert job.status == :running
+
+      # Now inject a result before the job completes.
       job
       |> Job.changeset(
         %{
@@ -117,10 +130,23 @@ defmodule ArbejdQ.SchedulerTest do
       )
       |> ArbejdQ.repo().update!
 
-      Process.sleep(2000)
+      # Wait long enough for the job completion
+      Process.sleep(1000)
 
-      {:ok, result} = ArbejdQ.wait(job.id)
+      # The result is the injected one, as it was the first result.
+      {:ok, :done, result} = ArbejdQ.wait(job.id)
       assert result == 42
+    end
+
+    test "Error in worker", _tags do
+      {:ok, job} =
+        ArbejdQ.enqueue_job("normal",
+                            ArbejdQ.Test.Worker,
+                            %{
+                              duration: "abekat"
+                            })
+      assert {:ok, :failed, reason} = ArbejdQ.wait(job)
+      assert {:badarith, _} = reason
     end
   end
 
@@ -137,15 +163,32 @@ defmodule ArbejdQ.SchedulerTest do
 
       new_state = Scheduler.schedule_jobs(tags.state)
       assert [worker] = new_state.workers
-      IO.inspect worker
-
-      Scheduler.handle_job_refresh(new_state)
+      assert worker.queue == :normal
 
       receive do
         {:"$gen_cast", {:job_done, id}} ->
-          IO.puts "Job done: #{id}"
-          IO.inspect job_1
+          assert id == job_1.id
       end
+    end
+
+    test "get_scheduler_info", tags do
+      info = Scheduler.calculate_scheduler_info(tags.state)
+      assert info == %{
+        global: %{
+          total_workers: 3,
+          used_workers: 0
+        },
+        queues: %{
+          high: %{
+            total_slots: 1,
+            used_slots: 0
+          },
+          normal: %{
+            total_slots: 2,
+            used_slots: 0
+          }
+        }
+      }
     end
   end
 end

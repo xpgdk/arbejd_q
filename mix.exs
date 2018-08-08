@@ -8,7 +8,8 @@ defmodule ArbejdQ.Mixfile do
      elixirc_paths: elixirc_paths(Mix.env()),
      build_embedded: Mix.env == :prod,
      start_permanent: Mix.env == :prod,
-     deps: deps()]
+     deps: deps(),
+     dialyzer: [plt_add_apps: [:ecto]]]
   end
 
   defp elixirc_paths(:test), do: ["lib", "test/support"]
@@ -36,8 +37,8 @@ defmodule ArbejdQ.Mixfile do
       {:ecto, "~> 2.2"},
       {:timex, "~> 3.2"},
       {:timex_ecto, "~> 3.2"},
-      {:postgrex, "~> 0.13.5"},
-      {:dialyzex, "~> 1.1.0", only: :dev},
+      {:postgrex, "~> 0.13.5", only: :test},
+      {:dialyxir, "~> 1.0.0-rc.3", runtime: false},
       {:ex_doc, "~> 0.18", only: :dev, runtime: false},
     ]
   end
