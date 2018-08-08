@@ -14,7 +14,7 @@ A job consists of of the the following:
 - Queue ID
 
 Both job parameters and job results are stored in Erlang External Term form. The length of
-both parameters and result is limit. Large parameter sets and result should be stored in 
+both parameters and result is limited. Large parameter sets and result should be stored in 
 some system external to the job processing system.
 
 Jobs are enqueued by using `ArbejdeQ.enqueue/3`. Each job has a designated queue ID, which is
