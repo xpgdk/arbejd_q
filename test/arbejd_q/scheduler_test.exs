@@ -10,6 +10,36 @@ defmodule ArbejdQ.SchedulerTest do
     Ecto.Adapters.SQL.Sandbox.mode(ArbejdQ.Test.Repo, {:shared, self()})
   end
 
+  defp named_scheduler(tags) do
+    {:ok, pid} = Scheduler.start_link(
+      [
+        poll_interval: 60 * 60, # So high that it will never occur during the test
+        max_jobs: 1,
+        queues: [
+          normal: [
+            max_jobs: 1,
+            priority: 1,
+          ],
+          high: [
+            max_jobs: 1,
+            priority: 10,
+          ],
+        ],
+      ], name: :arbejd_q_scheduler)
+
+
+    on_exit fn ->
+      # Ensure that the Scheduler does not run after the test has been completed
+      Process.exit(pid, :kill)
+    end
+
+    Map.merge(
+      tags,
+      %{
+        pid: pid
+      })
+  end
+
   defp scheduler(tags) do
     {:ok, pid} = Scheduler.start_link(
       [
@@ -62,6 +92,20 @@ defmodule ArbejdQ.SchedulerTest do
       %{
         state: state
       })
+  end
+
+  describe "Running named scheduler" do
+    setup [:named_scheduler]
+
+    test "Basic scheduler test", _tags do
+      {:ok, job} =
+        ArbejdQ.enqueue_job("normal",
+                            ArbejdQ.Test.Worker,
+                            %{
+                              duration: 1
+                            })
+      {:ok, :done, _result} = ArbejdQ.wait(job.id)
+    end
   end
 
   describe "Running scheduler" do

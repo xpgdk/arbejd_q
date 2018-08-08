@@ -16,49 +16,23 @@ defmodule ArbejdQ do
   @spec enqueue_job(String.t, atom, term)
   :: {:ok, Job.t} | {:error, Ecto.Changeset.t} | {:error, :invalid_params}
   def enqueue_job(queue, worker_module, parameters) do
-    with {:ok, _params} <- worker_module.validate_params(parameters)
+    with {:ok, _params} <- worker_module.validate_params(parameters),
+         {:ok, job} <- Job.build(
+           queue, worker_module, parameters,
+           %{
+             status: :queued
+           })
+           |> repo().insert()
     do
-      Job.build(queue, worker_module, parameters,
-                %{
-                  status: :queued
-                })
-      |> repo().insert()
-    else
-      :error -> {:error, :invalid_params}
-    end
-  end
-
-  @doc """
-  Execute a queued job.
-
-  This function is called by the scheduler, and should normally not be invoked
-  manually.
-  """
-  @spec execute_job(Job.t) :: {:ok, Job.t} | {:error, :invalid_status}
-  def execute_job(job) do
-    try do
-      # Reserve job by setting :status to :running
-      # If someone else tried to run it, the optimistic locking scheme
-      # will fail
-      {:ok, job} =
-        Job.changeset(job, %{status: :running, status_updated: DateTime.utc_now})
-        |> repo().update
-      result = job.worker_module.run(job.id, job.parameters)
-
-      {:ok, job} = get_job(job.id)
-
-      {:ok, job} =
-        Job.changeset(job,
-                      %{
-                        status: :done,
-                        status_updated: DateTime.utc_now,
-                        result: result,
-                      })
-        |> repo().update
+      scheduler_pid = Process.whereis(default_scheduler_name())
+      if scheduler_pid != nil and Process.alive?(scheduler_pid) do
+        ArbejdQ.Scheduler.poll_for_jobs(scheduler_pid)
+      end
 
       {:ok, job}
-    rescue
-      Ecto.StaleEntryError -> {:error, :invalid_status}
+    else
+      :error -> {:error, :invalid_params}
+      {:error, changeset} -> {:error, changeset}
     end
   end
 
@@ -150,6 +124,11 @@ defmodule ArbejdQ do
   @spec stale_job_period :: non_neg_integer
   def stale_job_period do
     Application.get_env(:arbejd_q, :stale_job_period, 60)
+  end
+
+  @spec default_scheduler_name :: nil | atom
+  def default_scheduler_name do
+    Application.get_env(:arbejd_q, :default_scheduler_name, nil)
   end
 
   @doc """

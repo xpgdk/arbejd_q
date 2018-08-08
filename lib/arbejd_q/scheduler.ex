@@ -91,14 +91,19 @@ defmodule ArbejdQ.Scheduler do
     GenServer.start(__MODULE__, opts, gen_server_opts)
   end
 
-  @spec stop(pid) :: :ok
+  @spec stop(GenServer.server()) :: :ok
   def stop(pid) do
     GenServer.stop(pid)
   end
 
-  @spec get_scheduler_info(pid) :: scheduler_info
+  @spec get_scheduler_info(GenServer.server()) :: scheduler_info
   def get_scheduler_info(pid) do
     GenServer.call(pid, :get_scheduler_info)
+  end
+
+  @spec poll_for_jobs(GenServer.server()) :: :ok
+  def poll_for_jobs(pid) do
+    GenServer.cast(pid, :poll_for_jobs)
   end
 
   ### GenServer Callback functions ###
@@ -127,6 +132,13 @@ defmodule ArbejdQ.Scheduler do
   end
 
   def handle_cast({:job_done, _job_id}, state) do
+    {:noreply, state}
+  end
+  def handle_cast(:poll_for_jobs, state) do
+    state =
+      state
+      |> handle_poll_timeout
+
     {:noreply, state}
   end
 
