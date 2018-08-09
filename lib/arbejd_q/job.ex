@@ -92,13 +92,21 @@ defmodule ArbejdQ.Job do
   def list_stale_jobs(queue_name, stale_progress_timestamp) do
     from job in Job,
       where: job.queue == ^queue_name and job.status == ^:running,
-      where: job.status_updated < ^stale_progress_timestamp
+      where: job.status_updated < ^stale_progress_timestamp,
+      order_by: job.inserted_at
   end
 
   @spec list_expired_jobs(String.t, DateTime.t) :: %Ecto.Query{}
   def list_expired_jobs(queue_name, expiration_time) do
     from job in Job,
       where: job.queue == ^queue_name and job.status in [^:done, ^:failed],
-      where: job.expiration_time < ^expiration_time
+      where: job.expiration_time < ^expiration_time,
+      order_by: job.inserted_at
+  end
+
+  @spec list_all :: %Ecto.Query{}
+  def list_all do
+    from job in Job,
+      order_by: job.inserted_at
   end
 end

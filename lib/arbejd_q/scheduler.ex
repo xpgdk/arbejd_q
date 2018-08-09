@@ -273,6 +273,7 @@ defmodule ArbejdQ.Scheduler do
 
     {_count, _removed} =
       ArbejdQ.Job.list_expired_jobs(to_string(queue), Timex.now)
+      |> Ecto.Query.exclude(:order_by)
       |> ArbejdQ.repo().delete_all()
 
     state
