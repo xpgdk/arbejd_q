@@ -106,6 +106,12 @@ defmodule ArbejdQ.SchedulerTest do
                             })
       {:ok, :done, _result} = ArbejdQ.wait(job.id)
     end
+
+    test "Nonexisting worker", _tags do
+      assert_raise UndefinedFunctionError, fn ->
+        ArbejdQ.enqueue_job("normal", NonExisting.Worker, %{})
+      end
+    end
   end
 
   describe "Running scheduler" do
@@ -124,6 +130,14 @@ defmodule ArbejdQ.SchedulerTest do
 
       # Expect job to be removed as it has a expiration_duration of 5 seconds
       assert {:error, :not_found} = ArbejdQ.get_job(job)
+    end
+
+    test "Nonexisting worker injected into database", _tags do
+      assert {:ok, job} =
+        ArbejdQ.Job.build("normal", NonExisting.Worker, %{}, %{status: :queued})
+        |> ArbejdQ.repo().insert()
+
+      assert {:ok, :failed, _reason} = ArbejdQ.wait(job)
     end
 
     test "Stale jobs", _tags do
