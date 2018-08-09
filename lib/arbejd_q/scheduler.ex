@@ -346,17 +346,17 @@ defmodule ArbejdQ.Scheduler do
         GenServer.cast(scheduler_pid, {:job_done, job.id})
       end
 
-         worker = %{
-           pid: worker_pid,
-           queue: queue,
-           job_id: job.id,
-         }
+       worker = %{
+         pid: worker_pid,
+         queue: queue,
+         job_id: job.id,
+       }
 
-         state = %{state|
-           workers: [worker | state.workers]
-         }
+       state = %{state|
+         workers: [worker | state.workers]
+       }
 
-         {state, remaining_slots - 1}
+       {state, remaining_slots - 1}
     else
       {:error, :taken} ->
         {state, remaining_slots}
