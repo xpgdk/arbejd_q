@@ -115,6 +115,12 @@ defmodule ArbejdQ do
     |> repo().all
   end
 
+  @spec list_jobs() :: [Job.t]
+  def list_jobs do
+    Job.list_all
+    |> repo().all()
+  end
+
   @doc """
   Get the stale job period in seconds.
 
