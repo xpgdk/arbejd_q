@@ -40,6 +40,8 @@ defmodule ArbejdQ.Scheduler do
     last_time_of_poll: DateTime.t,
     last_time_of_job_refresh: DateTime.t,
     last_time_of_stale_reset: DateTime.t,
+    timer_ref: reference | nil,
+    disable_timer: boolean,
   }
 
   @type global_scheduler_info :: %{
@@ -106,6 +108,16 @@ defmodule ArbejdQ.Scheduler do
     GenServer.cast(pid, :poll_for_jobs)
   end
 
+  @spec disable_timer(GenServer.server()) :: :ok
+  def disable_timer(pid) do
+    GenServer.call(pid, :disable_timer)
+  end
+
+  @spec enable_timer(GenServer.server()) :: :ok
+  def enable_timer(pid) do
+    GenServer.call(pid, :enable_timer)
+  end
+
   ### GenServer Callback functions ###
   def init(opts) do
     queues =
@@ -124,11 +136,11 @@ defmodule ArbejdQ.Scheduler do
       last_time_of_poll: Timex.now,
       last_time_of_job_refresh: Timex.now,
       last_time_of_stale_reset: Timex.now,
+      timer_ref: nil,
+      disable_timer: Application.get_env(:arbejd_q, :disable_timer, false),
     }
 
-    restart_timer(initial_state)
-
-    {:ok, initial_state}
+    {:ok, restart_timer(initial_state)}
   end
 
   def handle_cast({:job_done, _job_id}, state) do
@@ -145,10 +157,23 @@ defmodule ArbejdQ.Scheduler do
   def handle_call(:get_scheduler_info, _sender, state) do
     {:reply, calculate_scheduler_info(state), state}
   end
+  def handle_call(:disable_timer, _sender, state) do
+    if state.timer_ref != nil do
+      Process.cancel_timer(state.timer_ref)
+    end
+    {:reply, :ok, %{state | timer_ref: nil, disable_timer: true}}
+  end
+  def handle_call(:enable_timer, _sender, state) do
+    new_state =
+      %{state | disable_timer: false}
+      |> restart_timer
+
+    {:reply, :ok, new_state}
+  end
 
   def handle_info(:handle_timer, state) do
     state =
-      state
+      %{state | timer_ref: nil}
       |> maybe_handle_poll_timeout
       |> maybe_handle_job_refresh_timeout
       |> maybe_free_stale_jobs
@@ -342,8 +367,13 @@ defmodule ArbejdQ.Scheduler do
       scheduler_pid = self()
 
       {worker_pid, _} = spawn_monitor fn ->
-        {:ok, job, _result} = Execution.execute_job(job)
-        GenServer.cast(scheduler_pid, {:job_done, job.id})
+        case Execution.execute_job(job) do
+          {:ok, job, _result} ->
+            GenServer.cast(scheduler_pid, {:job_done, job.id})
+
+          _ ->
+            :ok
+        end
       end
 
        worker = %{
@@ -383,11 +413,12 @@ defmodule ArbejdQ.Scheduler do
   end
 
   @spec restart_timer(state) :: state
-  defp restart_timer(state) do
-    :timer.send_after(wait_time(state), :handle_timer)
+  defp restart_timer(%{timer_ref: nil, disable_timer: false} = state) do
+    timer_ref = Process.send_after(self(), :handle_timer, wait_time(state))
 
-    state
+    %{state | timer_ref: timer_ref}
   end
+  defp restart_timer(state), do: state
 
   defp refresh_job_period, do: round(ArbejdQ.stale_job_period/2)
 

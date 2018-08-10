@@ -3,6 +3,8 @@ defmodule ArbejdQ.Execution do
 
   alias ArbejdQ.Job
 
+  require Logger
+
   @doc """
   Take a specific job.
 
@@ -29,10 +31,17 @@ defmodule ArbejdQ.Execution do
   def execute_job(%Job{status: :running} = job) do
     job = assign_worker_pid(job, self())
     result = job.worker_module.run(job.id, job.parameters)
-    {:ok, job} = ArbejdQ.get_job(job.id)
-    job = commit_result(job, result)
 
-    {:ok, job, result}
+    case ArbejdQ.get_job(job.id) do
+      {:ok, job} ->
+        job = commit_result(job, result)
+
+        {:ok, job, result}
+
+      {:error, :not_found} ->
+        Logger.warn "ArbejdQ worker #{inspect self()}: Job #{job.id} not found when trying to commit result"
+        {:error, :not_found}
+    end
   end
 
   @spec assign_worker_pid(Job.t, pid) :: Job.t
