@@ -118,27 +118,21 @@ defmodule ArbejdQ.Scheduler do
     GenServer.call(pid, :enable_timer)
   end
 
+  @spec reconfigure(GenServer.server(), opts) :: :ok
+  def reconfigure(pid, opts) do
+    GenServer.call(pid, {:reconfigure, opts})
+  end
+
   ### GenServer Callback functions ###
   def init(opts) do
-    queues =
-      Keyword.get(opts, :queues, [])
-      |> Enum.sort_by(fn {_k, v} ->
-        Keyword.get(v, :priority, 1)
-      end, &>/2)
-    max_jobs = Keyword.get(opts, :max_jobs, 0)
-    poll_interval = Keyword.get(opts, :poll_interval, 30)
-
-    initial_state = %{
-      max_jobs: max_jobs,
-      poll_interval: poll_interval,
-      queues: queues,
+    initial_state = do_reconfigure(%{
       workers: [],
       last_time_of_poll: Timex.now,
       last_time_of_job_refresh: Timex.now,
       last_time_of_stale_reset: Timex.now,
       timer_ref: nil,
       disable_timer: Application.get_env(:arbejd_q, :disable_timer, false),
-    }
+    }, opts)
 
     {:ok, restart_timer(initial_state)}
   end
@@ -156,6 +150,9 @@ defmodule ArbejdQ.Scheduler do
 
   def handle_call(:get_scheduler_info, _sender, state) do
     {:reply, calculate_scheduler_info(state), state}
+  end
+  def handle_call({:reconfigure, opts}, _sender, state) do
+    {:reply, :ok, do_reconfigure(state, opts)}
   end
   def handle_call(:disable_timer, _sender, state) do
     if state.timer_ref != nil do
@@ -351,7 +348,10 @@ defmodule ArbejdQ.Scheduler do
     available_slots = min(total_slots - used_slots, available_workers)
 
     if available_slots > 0 do
-      jobs = ArbejdQ.list_queued_jobs(to_string(queue), available_slots)
+      # We ask for more jobs than we have slots in order to deal with the
+      # fact, that someone else may have started working on those jobs
+      # concurrently with us.
+      jobs = ArbejdQ.list_queued_jobs(to_string(queue), available_slots*2)
 
       {state, _} =
         jobs
@@ -483,5 +483,23 @@ defmodule ArbejdQ.Scheduler do
     workers = List.delete(state.workers, worker)
 
     {worker, %{state | workers: workers}}
+  end
+
+  @spec do_reconfigure(state, opts) :: state
+  defp do_reconfigure(state, opts) do
+    queues =
+      Keyword.get(opts, :queues, [])
+      |> Enum.sort_by(fn {_k, v} ->
+        Keyword.get(v, :priority, 1)
+      end, &>/2)
+    max_jobs = Keyword.get(opts, :max_jobs, 0)
+    poll_interval = Keyword.get(opts, :poll_interval, 30)
+
+    Map.merge(state,
+              %{
+                max_jobs: max_jobs,
+                poll_interval: poll_interval,
+                queues: queues
+              })
   end
 end
