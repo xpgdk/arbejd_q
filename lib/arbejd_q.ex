@@ -39,6 +39,15 @@ defmodule ArbejdQ do
   @doc """
   List all queued jobs within a queue.
   """
+  @spec list_queued_jobs(String.t, non_neg_integer) :: [Job.t]
+  def list_queued_jobs(queue, max_jobs) do
+    Job.list_queued_jobs(queue, max_jobs)
+    |> repo().all()
+  end
+
+  @doc """
+  List all queued jobs within a queue.
+  """
   @spec list_queued_jobs(String.t) :: [Job.t]
   def list_queued_jobs(queue) do
     Job.list_queued_jobs(queue)

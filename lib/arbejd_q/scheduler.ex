@@ -144,12 +144,12 @@ defmodule ArbejdQ.Scheduler do
   end
 
   def handle_cast({:job_done, _job_id}, state) do
-    {:noreply, state}
+    {:noreply, schedule_jobs(state)}
   end
   def handle_cast(:poll_for_jobs, state) do
     state =
       state
-      |> handle_poll_timeout
+      |> schedule_jobs
 
     {:noreply, state}
   end
@@ -350,13 +350,17 @@ defmodule ArbejdQ.Scheduler do
     total_slots = queue_slots.total_slots
     available_slots = min(total_slots - used_slots, available_workers)
 
-    jobs = ArbejdQ.list_queued_jobs(to_string(queue))
+    if available_slots > 0 do
+      jobs = ArbejdQ.list_queued_jobs(to_string(queue), available_slots)
 
-    {state, _} =
-      jobs
-      |> Enum.reduce({state, available_slots}, &try_execute_job(&2, &1, queue))
+      {state, _} =
+        jobs
+        |> Enum.reduce({state, available_slots}, &try_execute_job(&2, &1, queue))
 
-    state
+      state
+    else
+      state
+    end
   end
 
   @spec try_execute_job({state, non_neg_integer}, Job.t, atom) :: {state, non_neg_integer}

@@ -82,6 +82,14 @@ defmodule ArbejdQ.Job do
       order_by: job.inserted_at
   end
 
+  @spec list_queued_jobs(String.t, non_neg_integer) :: %Ecto.Query{}
+  def list_queued_jobs(queue_name, max_jobs) do
+    from job in Job,
+      where: job.queue == ^queue_name and job.status == ^:queued,
+      order_by: job.inserted_at,
+      limit: ^max_jobs
+  end
+
   @spec get_job(String.t) :: %Ecto.Query{}
   def get_job(job_id) do
     from job in Job,
