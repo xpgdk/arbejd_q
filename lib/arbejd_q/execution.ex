@@ -51,6 +51,10 @@ defmodule ArbejdQ.Execution do
       |> ArbejdQ.repo().update()
 
     job
+  rescue
+    Ecto.StaleEntryError ->
+      {:ok, job} = ArbejdQ.get_job(job)
+      assign_worker_pid(job, pid)
   end
 
   @spec commit_result(Job.t, term) :: Job.t
