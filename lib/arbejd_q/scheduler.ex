@@ -132,6 +132,7 @@ defmodule ArbejdQ.Scheduler do
       last_time_of_stale_reset: Timex.now,
       timer_ref: nil,
       disable_timer: Application.get_env(:arbejd_q, :disable_timer, false),
+      disable_execution: Application.get_env(:arbejd_q, :disable_execution, false),
     }, opts)
 
     {:ok, restart_timer(initial_state)}
@@ -278,10 +279,11 @@ defmodule ArbejdQ.Scheduler do
   # launch workers
   @doc false
   @spec schedule_jobs(state) :: state
-  def schedule_jobs(state) do
+  def schedule_jobs(%{disable_execution: false} = state) do
     state.queues
     |> Enum.reduce(state, &fill_queue(&2, &1))
   end
+  def schedule_jobs(state), do: state
 
   @doc false
   @spec cleanup_jobs(state) :: state
