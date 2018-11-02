@@ -118,6 +118,16 @@ defmodule ArbejdQ.Scheduler do
     GenServer.call(pid, :enable_timer)
   end
 
+  @spec enable_execution(GenServer.server()) :: :ok
+  def enable_execution(pid) do
+    GenServer.call(pid, :enable_execution)
+  end
+
+  @spec disable_execution(GenServer.server()) :: :ok
+  def disable_execution(pid) do
+    GenServer.call(pid, :disable_execution)
+  end
+
   @spec reconfigure(GenServer.server(), opts) :: :ok
   def reconfigure(pid, opts) do
     GenServer.call(pid, {:reconfigure, opts})
@@ -168,7 +178,16 @@ defmodule ArbejdQ.Scheduler do
 
     {:reply, :ok, new_state}
   end
-
+  def handle_call(:enable_execution, _sender, state) do
+    new_state =
+      %{state | disable_execution: false}
+      |> schedule_jobs
+    {:reply, :ok, new_state}
+  end
+  def handle_call(:disable_execution, _sender, state) do
+    new_state = %{state | disable_execution: true}
+    {:reply, :ok, new_state}
+  end
   def handle_info(:handle_timer, state) do
     state =
       %{state | timer_ref: nil}
