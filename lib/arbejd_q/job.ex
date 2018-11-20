@@ -107,7 +107,7 @@ defmodule ArbejdQ.Job do
   @spec list_expired_jobs(String.t, DateTime.t) :: %Ecto.Query{}
   def list_expired_jobs(queue_name, expiration_time) do
     from job in Job,
-      where: job.queue == ^queue_name and job.status in [^:done, ^:failed],
+      where: job.queue == ^queue_name and job.status == ^:done,
       where: job.expiration_time < ^expiration_time,
       order_by: job.inserted_at
   end
