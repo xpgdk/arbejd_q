@@ -84,7 +84,9 @@ defmodule ArbejdQ.SchedulerTest do
           max_jobs: 2,
           priority: 1,
         ]
-      ]
+      ],
+      disable_timer: false,
+      disable_execution: false
     }
 
     Map.merge(

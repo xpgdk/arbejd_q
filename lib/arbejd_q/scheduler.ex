@@ -42,6 +42,7 @@ defmodule ArbejdQ.Scheduler do
     last_time_of_stale_reset: DateTime.t,
     timer_ref: reference | nil,
     disable_timer: boolean,
+    disable_execution: boolean
   }
 
   @type global_scheduler_info :: %{
