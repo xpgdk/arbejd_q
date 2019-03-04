@@ -136,23 +136,26 @@ defmodule ArbejdQ.SchedulerTest do
 
     test "Nonexisting worker injected into database", _tags do
       assert {:ok, job} =
-        ArbejdQ.Job.build("normal", NonExisting.Worker, %{}, %{status: :queued})
-        |> ArbejdQ.repo().insert()
+        ArbejdQ.create_job("normal", NonExisting.Worker, %{})
 
       assert {:ok, :failed, _reason} = ArbejdQ.wait(job)
     end
 
     test "Stale jobs", _tags do
-      job =
+      query =
         Job.build("normal",
-                  ArbejdQ.Test.Worker,
-                  %{duration: 1},
-                  %{
-                    status: :running,
-                    status_updated: DateTime.utc_now
-                  }
+            ArbejdQ.Test.Worker,
+            %{duration: 1},
+            %{
+              status: :running,
+              status_updated: DateTime.utc_now
+            }
         )
-        |> ArbejdQ.repo().insert!
+
+      job =
+        case ArbejdQ.repo().transaction(query) do
+          {:ok, changes} -> changes[:update]
+        end
 
       # After 5 seconds, the Scheduler ought to free the job
       # and shortly thereafter execute it

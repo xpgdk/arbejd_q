@@ -33,7 +33,6 @@ defmodule ArbejdQ.Job do
   schema "arbejdq_jobs" do
     field :queue, :string
     field :worker_module, ArbejdQ.Types.Atom
-    field :parameters, Term
     field :result, Term
     field :progress, Term
     field :worker_pid, Term
@@ -51,7 +50,6 @@ defmodule ArbejdQ.Job do
     struct
     |> cast(params, [:queue,
                      :worker_module,
-                     :parameters,
                      :result,
                      :progress,
                      :worker_pid,
@@ -59,20 +57,30 @@ defmodule ArbejdQ.Job do
                      :status_updated,
                      :expiration_time,
                      :completion_time])
-    |> validate_required([:queue, :worker_module, :parameters])
+    |> validate_required([:queue, :worker_module])
     |> optimistic_lock(:lock_version)
   end
 
-  @spec build(String.t, atom, term) :: Ecto.Changeset.t
-  def build(queue, worker_module, job_parameters, params \\ %{}) do
-    %__MODULE__{}
-    |> changeset(Map.merge(
-      %{
-        queue: queue,
-        worker_module: worker_module,
-        parameters: job_parameters,
-      },
-      params))
+  @spec build(String.t, atom, term, map) :: Ecto.Multi.t
+  def build(queue, worker_module, parameters, params \\ %{}) do
+    Ecto.Multi.new()
+    |> Ecto.Multi.insert(:insert,
+      %__MODULE__{}
+      |> changeset(Map.merge(
+        %{
+          queue: queue,
+          worker_module: worker_module,
+        },
+        params))
+    )
+    |> Ecto.Multi.run(:update, fn changes ->
+      job = changes[:insert]
+
+      Ecto.Query.from(job in "arbejdq_jobs", where: job.id == ^UUID.string_to_binary!(job.id))
+      |> ArbejdQ.repo().update_all([set: [parameters: :erlang.term_to_binary(parameters)]])
+
+      {:ok, job}
+    end)
   end
 
   @spec list_queued_jobs(String.t) :: %Ecto.Query{}

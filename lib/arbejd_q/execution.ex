@@ -30,7 +30,8 @@ defmodule ArbejdQ.Execution do
   @spec execute_job(Job.t) :: {:ok, Job.t, term}
   def execute_job(%Job{status: :running} = job) do
     job = assign_worker_pid(job, self())
-    result = job.worker_module.run(job.id, job.parameters)
+    parameters = ArbejdQ.get_job_parameters(job)
+    result = job.worker_module.run(job.id, parameters)
 
     case ArbejdQ.get_job(job.id) do
       {:ok, job} ->

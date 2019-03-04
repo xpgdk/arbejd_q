@@ -5,6 +5,8 @@ defmodule ArbejdQ do
 
   alias ArbejdQ.Job
 
+  require Ecto.Query
+
   @doc """
   Enqueue a new job.
 
@@ -17,12 +19,7 @@ defmodule ArbejdQ do
   :: {:ok, Job.t} | {:error, Ecto.Changeset.t} | {:error, :invalid_params}
   def enqueue_job(queue, worker_module, parameters) do
     with {:ok, _params} <- worker_module.validate_params(parameters),
-         {:ok, job} <- Job.build(
-           queue, worker_module, parameters,
-           %{
-             status: :queued
-           })
-           |> repo().insert()
+         {:ok, job} <- create_job(queue, worker_module, parameters)
     do
       scheduler_pid = Process.whereis(default_scheduler_name())
       if scheduler_pid != nil and Process.alive?(scheduler_pid) do
@@ -34,6 +31,27 @@ defmodule ArbejdQ do
       :error -> {:error, :invalid_params}
       {:error, changeset} -> {:error, changeset}
     end
+  end
+
+  @doc false
+  @spec create_job(String.t, atom, term) :: {:ok, Job.t} | {:error, Ecto.Changeset.t}
+  def create_job(queue, worker_module, parameters) do
+    case repo().transaction(Job.build(queue, worker_module, parameters, %{
+        status: :queued
+      })) do
+      {:ok, changes} -> {:ok, changes[:update]}
+      {:error, _, changeset, _} -> {:error, changeset}
+    end
+  end
+
+  @spec get_job_parameters(Job.t | String.t) :: any
+  def get_job_parameters(%Job{} = job) do
+    get_job_parameters(job.id)
+  end
+  def get_job_parameters(job_id) when is_binary(job_id) do
+    Ecto.Query.from(job in "arbejdq_jobs", where: job.id == ^UUID.string_to_binary!(job_id), select: job.parameters)
+    |> repo().one()
+    |> :erlang.binary_to_term
   end
 
   @doc """

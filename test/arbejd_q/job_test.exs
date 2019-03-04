@@ -8,7 +8,6 @@ defmodule ArbejdQ.JobTest do
       changeset = Job.changeset(%Job{}, %{
         queue: "default",
         worker_module: "WorkerTest",
-        parameters: %{a: 1, b: 3}
       })
 
       assert changeset.valid?
@@ -17,7 +16,6 @@ defmodule ArbejdQ.JobTest do
     test "Missing :queue" do
       changeset = Job.changeset(%Job{}, %{
         worker_module: "WorkerTest",
-        parameters: %{a: 1, b: 3}
       })
 
       refute changeset.valid?
@@ -26,16 +24,6 @@ defmodule ArbejdQ.JobTest do
     test "Missing :worker_module" do
       changeset = Job.changeset(%Job{}, %{
         queue: "default",
-        parameters: %{a: 1, b: 3}
-      })
-
-      refute changeset.valid?
-    end
-
-    test "Missing :parameters" do
-      changeset = Job.changeset(%Job{}, %{
-        queue: "default",
-        worker_module: "WorkerTest",
       })
 
       refute changeset.valid?

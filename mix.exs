@@ -3,7 +3,7 @@ defmodule ArbejdQ.Mixfile do
 
   def project do
     [app: :arbejd_q,
-     version: "0.1.4",
+     version: "0.1.5",
      elixir: "~> 1.4",
      elixirc_paths: elixirc_paths(Mix.env()),
      build_embedded: Mix.env == :prod,
@@ -37,6 +37,7 @@ defmodule ArbejdQ.Mixfile do
       {:ecto, "~> 2.2"},
       {:timex, "~> 3.2"},
       {:timex_ecto, "~> 3.2"},
+      {:elixir_uuid, "~> 1.2"},
       {:postgrex, "~> 0.13.5", only: :test},
       {:dialyxir, "~> 1.0.0-rc.3", only: :dev, runtime: false},
       {:ex_doc, "~> 0.18", only: :dev, runtime: false},
