@@ -16,7 +16,6 @@ defmodule ArbejdQ.Job do
   """
 
   use Ecto.Schema
-  use Timex.Ecto.Timestamps, usec: true
 
   import Ecto.Changeset
   import Ecto.Query
@@ -28,6 +27,7 @@ defmodule ArbejdQ.Job do
 
   @primary_key {:id, Ecto.UUID, autogenerate: true}
   @foreign_key_type Ecto.UUID
+  @timestamps_opts [type: :utc_datetime_usec]
 
   @type t :: %__MODULE__{}
   schema "arbejdq_jobs" do
@@ -37,9 +37,9 @@ defmodule ArbejdQ.Job do
     field :progress, Term
     field :worker_pid, Term
     field :status, ArbejdQ.Types.Status
-    field :status_updated, :utc_datetime
-    field :expiration_time, :utc_datetime
-    field :completion_time, :utc_datetime
+    field :status_updated, :utc_datetime_usec
+    field :expiration_time, :utc_datetime_usec
+    field :completion_time, :utc_datetime_usec
     field :lock_version, :integer, default: 1
 
     timestamps()
@@ -73,7 +73,7 @@ defmodule ArbejdQ.Job do
         },
         params))
     )
-    |> Ecto.Multi.run(:update, fn changes ->
+    |> Ecto.Multi.run(:update, fn _repo, changes ->
       job = changes[:insert]
 
       Ecto.Query.from(job in "arbejdq_jobs", where: job.id == ^UUID.string_to_binary!(job.id))

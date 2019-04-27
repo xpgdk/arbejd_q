@@ -15,12 +15,12 @@ defmodule ArbejdQ.Migrations.V1 do
       add :progress, :binary
       add :worker_pid, :binary
       add :status, :integer
-      add :status_updated, :utc_datetime
-      add :expiration_time, :utc_datetime
-      add :completion_time, :utc_datetime
+      add :status_updated, :utc_datetime_usec
+      add :expiration_time, :utc_datetime_usec
+      add :completion_time, :utc_datetime_usec
       add :lock_version, :integer
 
-      timestamps()
+      timestamps(type: :utc_datetime_usec)
     end
 
     _ = create index(:arbejdq_jobs, [:queue])
