@@ -3,7 +3,7 @@ defmodule ArbejdQ.Mixfile do
 
   def project do
     [app: :arbejd_q,
-     version: "0.1.6",
+     version: "0.2.0",
      elixir: "~> 1.4",
      elixirc_paths: elixirc_paths(Mix.env()),
      build_embedded: Mix.env == :prod,
@@ -34,11 +34,11 @@ defmodule ArbejdQ.Mixfile do
   # Type "mix help deps" for more examples and options
   defp deps do
     [
-      {:ecto, "~> 3.1"},
-      {:ecto_sql, "~> 3.1"},
+      {:ecto, "~> 3.5"},
+      {:ecto_sql, "~> 3.5"},
       {:timex, "~> 3.5"},
       {:elixir_uuid, "~> 1.2"},
-      {:postgrex, "~> 0.14.2", only: :test},
+      {:postgrex, "~> 0.15", only: :test},
       {:dialyxir, "~> 1.0.0-rc.3", only: :dev, runtime: false},
       {:ex_doc, "~> 0.18", only: :dev, runtime: false},
     ]
