@@ -84,6 +84,13 @@ defmodule ArbejdQ.Scheduler do
     GenServer.start_link(__MODULE__, opts, gen_server_opts)
   end
 
+  def child_spec([opts, genserver_opts]) do
+    %{
+      id: __MODULE__,
+      start: {__MODULE__, :start_link, [opts, genserver_opts]}
+    }
+  end
+
   @doc """
   Start the scheduler.
 
