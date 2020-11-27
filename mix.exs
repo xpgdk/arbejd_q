@@ -3,7 +3,7 @@ defmodule ArbejdQ.Mixfile do
 
   def project do
     [app: :arbejd_q,
-     version: "0.1.6",
+     version: "2.0.0",
      elixir: "~> 1.4",
      elixirc_paths: elixirc_paths(Mix.env()),
      build_embedded: Mix.env == :prod,

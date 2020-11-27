@@ -248,13 +248,21 @@ defmodule ArbejdQ.Scheduler do
   end
 
   @spec release_job(Job.t) :: :ok
-  defp release_job(job) do
+  defp release_job(%Job{stale_counter: stale_counter} = job) do
     try do
+      new_status =
+        if stale_counter > 1 do
+          :failed
+        else
+          :queued
+        end
+
       job
       |> Job.changeset(
         %{
-          status: :queued,
-          status_updated: DateTime.utc_now
+          status: new_status,
+          status_updated: DateTime.utc_now,
+          stale_counter: stale_counter + 1
         })
       |> ArbejdQ.repo().update!
 

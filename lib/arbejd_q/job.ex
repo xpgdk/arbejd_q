@@ -41,6 +41,7 @@ defmodule ArbejdQ.Job do
     field :expiration_time, :utc_datetime_usec
     field :completion_time, :utc_datetime_usec
     field :lock_version, :integer, default: 1
+    field :stale_counter, :integer, default: 0
 
     timestamps()
   end
@@ -56,7 +57,8 @@ defmodule ArbejdQ.Job do
                      :status,
                      :status_updated,
                      :expiration_time,
-                     :completion_time])
+                     :completion_time,
+                     :stale_counter])
     |> validate_required([:queue, :worker_module])
     |> optimistic_lock(:lock_version)
   end
