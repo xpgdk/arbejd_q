@@ -2,7 +2,7 @@ defmodule ArbejdQ.Types.Term do
   @moduledoc """
   """
 
-  @behaviour Ecto.Type
+  use Ecto.Type
 
   def type, do: :binary
 

@@ -2,7 +2,7 @@ defmodule ArbejdQ.Types.Atom do
   @moduledoc """
   """
 
-  @behaviour Ecto.Type
+  use Ecto.Type
 
   def type, do: :string
 

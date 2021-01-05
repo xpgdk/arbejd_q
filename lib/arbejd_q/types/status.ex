@@ -2,7 +2,7 @@ defmodule ArbejdQ.Types.Status do
   @moduledoc """
   """
 
-  @behaviour Ecto.Type
+  use Ecto.Type
 
   def type, do: :integer
 
