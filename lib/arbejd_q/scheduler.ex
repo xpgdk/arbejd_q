@@ -14,54 +14,54 @@ defmodule ArbejdQ.Scheduler do
   }
 
   @type queue_config :: [
-    max_jobs: non_neg_integer,
-    priority: non_neg_integer,
-  ]
+          max_jobs: non_neg_integer,
+          priority: non_neg_integer
+        ]
 
   @type opt ::
-    {:queues,
-      %{
-        required(atom) => queue_config
-      }}
-    | {:max_jobs, non_neg_integer()}
-    | {:poll_interval, non_neg_integer()}
+          {:queues,
+           %{
+             required(atom) => queue_config
+           }}
+          | {:max_jobs, non_neg_integer()}
+          | {:poll_interval, non_neg_integer()}
   @type opts :: [opt]
 
   @typep worker :: %{
-    pid: pid,
-    queue: atom,
-    job_id: String.t,
-  }
+           pid: pid,
+           queue: atom,
+           job_id: String.t()
+         }
 
   @typep state :: %{
-    queues: [{:atom, queue_config}],
-    max_jobs: non_neg_integer,
-    poll_interval: non_neg_integer,
-    workers: [worker],
-    last_time_of_poll: DateTime.t,
-    last_time_of_job_refresh: DateTime.t,
-    last_time_of_stale_reset: DateTime.t,
-    timer_ref: reference | nil,
-    disable_timer: boolean,
-    disable_execution: boolean
-  }
+           queues: [{:atom, queue_config}],
+           max_jobs: non_neg_integer,
+           poll_interval: non_neg_integer,
+           workers: [worker],
+           last_time_of_poll: DateTime.t(),
+           last_time_of_job_refresh: DateTime.t(),
+           last_time_of_stale_reset: DateTime.t(),
+           timer_ref: reference | nil,
+           disable_timer: boolean,
+           disable_execution: boolean
+         }
 
   @type global_scheduler_info :: %{
-    total_workers: non_neg_integer,
-    used_workers: non_neg_integer
-  }
+          total_workers: non_neg_integer,
+          used_workers: non_neg_integer
+        }
 
   @type per_queue_scheduler_info :: %{
-    total_slots: non_neg_integer,
-    used_slots: non_neg_integer
-  }
+          total_slots: non_neg_integer,
+          used_slots: non_neg_integer
+        }
 
   @type scheduler_info :: %{
-    global: global_scheduler_info,
-    queues: %{
-      required(atom) => per_queue_scheduler_info
-    }
-  }
+          global: global_scheduler_info,
+          queues: %{
+            required(atom) => per_queue_scheduler_info
+          }
+        }
 
   @doc """
   Start the scheduler.
@@ -80,7 +80,7 @@ defmodule ArbejdQ.Scheduler do
   - `:priority` priority of the queue. Queue with the highest priority number are
     consideret first, when scheduling jobs.
   """
-  @spec start_link(opts, GenServer.options) :: GenServer.on_start
+  @spec start_link(opts, GenServer.options()) :: GenServer.on_start()
   def start_link(opts, gen_server_opts \\ []) do
     GenServer.start_link(__MODULE__, opts, gen_server_opts)
   end
@@ -97,7 +97,7 @@ defmodule ArbejdQ.Scheduler do
 
   See `start_link/2`.
   """
-  @spec start(opts, GenServer.options) :: GenServer.on_start
+  @spec start(opts, GenServer.options()) :: GenServer.on_start()
   def start(opts, gen_server_opts \\ []) do
     GenServer.start(__MODULE__, opts, gen_server_opts)
   end
@@ -145,18 +145,22 @@ defmodule ArbejdQ.Scheduler do
   ### GenServer Callback functions ###
   @spec init(opts) :: {:ok, state}
   def init(opts) do
-    initial_state = do_reconfigure(%{
-      queues: [],
-      max_jobs: 0,
-      poll_interval: 0,
-      workers: [],
-      last_time_of_poll: Timex.now,
-      last_time_of_job_refresh: Timex.now,
-      last_time_of_stale_reset: Timex.now,
-      timer_ref: nil,
-      disable_timer: Application.get_env(:arbejd_q, :disable_timer, false),
-      disable_execution: Application.get_env(:arbejd_q, :disable_execution, false),
-    }, opts)
+    initial_state =
+      do_reconfigure(
+        %{
+          queues: [],
+          max_jobs: 0,
+          poll_interval: 0,
+          workers: [],
+          last_time_of_poll: Timex.now(),
+          last_time_of_job_refresh: Timex.now(),
+          last_time_of_stale_reset: Timex.now(),
+          timer_ref: nil,
+          disable_timer: Application.get_env(:arbejd_q, :disable_timer, false),
+          disable_execution: Application.get_env(:arbejd_q, :disable_execution, false)
+        },
+        opts
+      )
 
     {:ok, restart_timer(initial_state)}
   end
@@ -164,6 +168,7 @@ defmodule ArbejdQ.Scheduler do
   def handle_cast({:job_done, _job_id}, state) do
     {:noreply, schedule_jobs(state)}
   end
+
   def handle_cast(:poll_for_jobs, state) do
     state =
       state
@@ -175,15 +180,19 @@ defmodule ArbejdQ.Scheduler do
   def handle_call(:get_scheduler_info, _sender, state) do
     {:reply, calculate_scheduler_info(state), state}
   end
+
   def handle_call({:reconfigure, opts}, _sender, state) do
     {:reply, :ok, do_reconfigure(state, opts)}
   end
+
   def handle_call(:disable_timer, _sender, state) do
     if state.timer_ref != nil do
       Process.cancel_timer(state.timer_ref)
     end
+
     {:reply, :ok, %{state | timer_ref: nil, disable_timer: true}}
   end
+
   def handle_call(:enable_timer, _sender, state) do
     new_state =
       %{state | disable_timer: false}
@@ -191,16 +200,20 @@ defmodule ArbejdQ.Scheduler do
 
     {:reply, :ok, new_state}
   end
+
   def handle_call(:enable_execution, _sender, state) do
     new_state =
       %{state | disable_execution: false}
       |> schedule_jobs
+
     {:reply, :ok, new_state}
   end
+
   def handle_call(:disable_execution, _sender, state) do
     new_state = %{state | disable_execution: true}
     {:reply, :ok, new_state}
   end
+
   def handle_info(:handle_timer, state) do
     state =
       %{state | timer_ref: nil}
@@ -211,6 +224,7 @@ defmodule ArbejdQ.Scheduler do
 
     {:noreply, state}
   end
+
   def handle_info({:DOWN, _ref, :process, pid, reason}, state) do
     state = handle_worker_done(state, pid, reason)
     {:noreply, state}
@@ -219,30 +233,34 @@ defmodule ArbejdQ.Scheduler do
   ### Internal functions ###
 
   defp maybe_handle_poll_timeout(state) do
-    time_since_last_poll = Timex.diff(Timex.now, state.last_time_of_poll, :seconds)
+    time_since_last_poll = Timex.diff(Timex.now(), state.last_time_of_poll, :seconds)
+
     if time_since_last_poll >= state.poll_interval do
       state = handle_poll_timeout(state)
-      %{state | last_time_of_poll: Timex.now}
+      %{state | last_time_of_poll: Timex.now()}
     else
       state
     end
   end
 
   defp maybe_handle_job_refresh_timeout(state) do
-    time_since_last_job_refresh = Timex.diff(Timex.now, state.last_time_of_job_refresh, :seconds)
+    time_since_last_job_refresh =
+      Timex.diff(Timex.now(), state.last_time_of_job_refresh, :seconds)
+
     if time_since_last_job_refresh >= refresh_job_period() do
       state = handle_job_refresh(state)
-      %{state | last_time_of_job_refresh: Timex.now}
+      %{state | last_time_of_job_refresh: Timex.now()}
     else
       state
     end
   end
 
   defp maybe_free_stale_jobs(state) do
-    time_since_stale_reset = Timex.diff(Timex.now, state.last_time_of_stale_reset)
-    if time_since_stale_reset >= ArbejdQ.stale_job_period do
+    time_since_stale_reset = Timex.diff(Timex.now(), state.last_time_of_stale_reset)
+
+    if time_since_stale_reset >= ArbejdQ.stale_job_period() do
       state = free_stale_jobs(state)
-      %{state | last_time_of_stale_reset: Timex.now}
+      %{state | last_time_of_stale_reset: Timex.now()}
     else
       state
     end
@@ -259,7 +277,7 @@ defmodule ArbejdQ.Scheduler do
     state
   end
 
-  @spec release_job(Job.t) :: :ok
+  @spec release_job(Job.t()) :: :ok
   defp release_job(%Job{stale_counter: stale_counter} = job) do
     try do
       new_status =
@@ -270,12 +288,11 @@ defmodule ArbejdQ.Scheduler do
         end
 
       job
-      |> Job.changeset(
-        %{
-          status: new_status,
-          status_updated: DateTime.utc_now,
-          stale_counter: stale_counter + 1
-        })
+      |> Job.changeset(%{
+        status: new_status,
+        status_updated: DateTime.utc_now(),
+        stale_counter: stale_counter + 1
+      })
       |> ArbejdQ.repo().update!
 
       :ok
@@ -304,6 +321,7 @@ defmodule ArbejdQ.Scheduler do
               job
               |> Job.changeset(%{status_updated: DateTime.utc_now()})
               |> ArbejdQ.repo().update
+
               :ok
             rescue
               Ecto.StaleEntryError -> :ok
@@ -323,6 +341,7 @@ defmodule ArbejdQ.Scheduler do
     state.queues
     |> Enum.reduce(state, &fill_queue(&2, &1))
   end
+
   def schedule_jobs(state), do: state
 
   @doc false
@@ -334,9 +353,8 @@ defmodule ArbejdQ.Scheduler do
 
   @spec cleanup_queue(state, {atom, queue_config}) :: state
   defp cleanup_queue(state, {queue, _config}) do
-
     {_count, _removed} =
-      ArbejdQ.Job.list_expired_jobs(to_string(queue), Timex.now)
+      ArbejdQ.Job.list_expired_jobs(to_string(queue), Timex.now())
       |> Ecto.Query.exclude(:order_by)
       |> ArbejdQ.repo().delete_all()
 
@@ -351,7 +369,7 @@ defmodule ArbejdQ.Scheduler do
     }
   end
 
-  @spec calculate_queue_numbers(state, {atom, Keyword.t}) :: per_queue_scheduler_info
+  @spec calculate_queue_numbers(state, {atom, Keyword.t()}) :: per_queue_scheduler_info
   defp calculate_queue_numbers(state, {queue, config}) do
     %{
       used_slots: worker_count(state, queue),
@@ -367,7 +385,7 @@ defmodule ArbejdQ.Scheduler do
       |> Enum.map(fn
         {queue, config} -> {queue, calculate_queue_numbers(state, {queue, config})}
       end)
-      |> Map.new
+      |> Map.new()
 
     %{
       global: calculate_worker_numbers(state),
@@ -393,7 +411,7 @@ defmodule ArbejdQ.Scheduler do
       # We ask for more jobs than we have slots in order to deal with the
       # fact, that someone else may have started working on those jobs
       # concurrently with us.
-      jobs = ArbejdQ.list_queued_jobs(to_string(queue), available_slots*2)
+      jobs = ArbejdQ.list_queued_jobs(to_string(queue), available_slots * 2)
 
       {state, _} =
         jobs
@@ -405,34 +423,33 @@ defmodule ArbejdQ.Scheduler do
     end
   end
 
-  @spec try_execute_job({state, non_neg_integer}, Job.t, atom) :: {state, non_neg_integer}
+  @spec try_execute_job({state, non_neg_integer}, Job.t(), atom) :: {state, non_neg_integer}
   defp try_execute_job({state, 0}, _, _), do: {state, 0}
+
   defp try_execute_job({state, remaining_slots}, job, queue) do
-    with {:ok, job} <- Execution.take_job(job)
-    do
+    with {:ok, job} <- Execution.take_job(job) do
       scheduler_pid = self()
 
-      {worker_pid, _} = spawn_monitor fn ->
-        case Execution.execute_job(job) do
-          {:ok, job, _result} ->
-            GenServer.cast(scheduler_pid, {:job_done, job.id})
+      {worker_pid, _} =
+        spawn_monitor(fn ->
+          case Execution.execute_job(job) do
+            {:ok, job, _result} ->
+              GenServer.cast(scheduler_pid, {:job_done, job.id})
 
-          {:error, _reason} ->
-            :ok
-        end
-      end
+            {:error, _reason} ->
+              :ok
+          end
+        end)
 
-       worker = %{
-         pid: worker_pid,
-         queue: queue,
-         job_id: job.id,
-       }
+      worker = %{
+        pid: worker_pid,
+        queue: queue,
+        job_id: job.id
+      }
 
-       state = %{state|
-         workers: [worker | state.workers]
-       }
+      state = %{state | workers: [worker | state.workers]}
 
-       {state, remaining_slots - 1}
+      {state, remaining_slots - 1}
     else
       {:error, :taken} ->
         {state, remaining_slots}
@@ -447,7 +464,7 @@ defmodule ArbejdQ.Scheduler do
   # Returns wait time in milliseconds
   @spec wait_time(state) :: non_neg_integer
   defp wait_time(state) do
-    now = Timex.now
+    now = Timex.now()
     time_since_poll = Timex.diff(now, state.last_time_of_poll, :seconds)
     time_to_next_poll = max(0, state.poll_interval - time_since_poll)
 
@@ -464,9 +481,10 @@ defmodule ArbejdQ.Scheduler do
 
     %{state | timer_ref: timer_ref}
   end
+
   defp restart_timer(state), do: state
 
-  defp refresh_job_period, do: round(ArbejdQ.stale_job_period/2)
+  defp refresh_job_period, do: round(ArbejdQ.stale_job_period() / 2)
 
   @spec queue_workers(state, atom) :: [worker]
   defp queue_workers(state, queue) do
@@ -482,10 +500,10 @@ defmodule ArbejdQ.Scheduler do
   @spec worker_count(state, atom) :: non_neg_integer
   defp worker_count(state, queue) do
     queue_workers(state, queue)
-    |> Enum.count
+    |> Enum.count()
   end
 
-  @spec max_queue_jobs(Keyword.t) :: non_neg_integer
+  @spec max_queue_jobs(Keyword.t()) :: non_neg_integer
   defp max_queue_jobs(config) do
     Keyword.get(config, :max_jobs, 1)
   end
@@ -531,17 +549,23 @@ defmodule ArbejdQ.Scheduler do
   defp do_reconfigure(state, opts) do
     queues =
       Keyword.get(opts, :queues, [])
-      |> Enum.sort_by(fn {_k, v} ->
-        Keyword.get(v, :priority, 1)
-      end, &>/2)
+      |> Enum.sort_by(
+        fn {_k, v} ->
+          Keyword.get(v, :priority, 1)
+        end,
+        &>/2
+      )
+
     max_jobs = Keyword.get(opts, :max_jobs, 0)
     poll_interval = Keyword.get(opts, :poll_interval, 30)
 
-    Map.merge(state,
-              %{
-                max_jobs: max_jobs,
-                poll_interval: poll_interval,
-                queues: queues
-              })
+    Map.merge(
+      state,
+      %{
+        max_jobs: max_jobs,
+        poll_interval: poll_interval,
+        queues: queues
+      }
+    )
   end
 end

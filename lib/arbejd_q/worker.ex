@@ -12,20 +12,21 @@ defmodule ArbejdQ.Worker do
   end
 
   @callback validate_params(map) :: {:ok, map} | :error
-  @callback run(String.t, map) :: any
+  @callback run(String.t(), map) :: any
 
-  @spec report_progress(String.t, any) :: Job.t
+  @spec report_progress(String.t(), any) :: Job.t()
   def report_progress(job_id, progress) do
     {:ok, job} = ArbejdQ.get_job(job_id)
+
     try do
       {:ok, job} =
         job
-        |> Job.changeset(
-          %{
-            progress: progress,
-            status_updated: DateTime.utc_now(),
-          })
+        |> Job.changeset(%{
+          progress: progress,
+          status_updated: DateTime.utc_now()
+        })
         |> ArbejdQ.repo().update
+
       job
     rescue
       Ecto.StaleEntryError -> job
