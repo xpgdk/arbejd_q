@@ -27,7 +27,7 @@ defmodule ArbejdQ.Execution do
     end
   end
 
-  @spec execute_job(Job.t) :: {:ok, Job.t, term}
+  @spec execute_job(Job.t) :: {:ok, Job.t, term} | {:error, :not_found}
   def execute_job(%Job{status: :running} = job) do
     job = assign_worker_pid(job, self())
     parameters = ArbejdQ.get_job_parameters(job)

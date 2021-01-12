@@ -18,13 +18,14 @@ defmodule ArbejdQ.Scheduler do
     priority: non_neg_integer,
   ]
 
-  @type opts :: [
-    queues: %{
-      required(atom) => queue_config
-    },
-    max_jobs: non_neg_integer,
-    poll_interval: non_neg_integer,
-  ]
+  @type opt ::
+    {:queues,
+      %{
+        required(atom) => queue_config
+      }}
+    | {:max_jobs, non_neg_integer()}
+    | {:poll_interval, non_neg_integer()}
+  @type opts :: [opt]
 
   @typep worker :: %{
     pid: pid,
@@ -142,8 +143,12 @@ defmodule ArbejdQ.Scheduler do
   end
 
   ### GenServer Callback functions ###
+  @spec init(opts) :: {:ok, state}
   def init(opts) do
     initial_state = do_reconfigure(%{
+      queues: [],
+      max_jobs: 0,
+      poll_interval: 0,
       workers: [],
       last_time_of_poll: Timex.now,
       last_time_of_job_refresh: Timex.now,
@@ -412,7 +417,7 @@ defmodule ArbejdQ.Scheduler do
           {:ok, job, _result} ->
             GenServer.cast(scheduler_pid, {:job_done, job.id})
 
-          _ ->
+          {:error, _reason} ->
             :ok
         end
       end
