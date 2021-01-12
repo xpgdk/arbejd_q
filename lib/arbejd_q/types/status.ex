@@ -4,6 +4,8 @@ defmodule ArbejdQ.Types.Status do
 
   use Ecto.Type
 
+  @type t :: :queued | :running | :done | :failed
+
   def type, do: :integer
 
   def cast(status) when is_atom(status) do

@@ -15,7 +15,7 @@ defmodule ArbejdQ.Job do
     Default: 300 (5 minutes).
   """
 
-  use Ecto.Schema
+  use TypedEctoSchema
 
   import Ecto.Changeset
   import Ecto.Query
@@ -29,8 +29,7 @@ defmodule ArbejdQ.Job do
   @foreign_key_type Ecto.UUID
   @timestamps_opts [type: :utc_datetime_usec]
 
-  @type t :: %__MODULE__{}
-  schema "arbejdq_jobs" do
+  typed_schema "arbejdq_jobs" do
     field :queue, :string
     field :worker_module, ArbejdQ.Types.Atom
     field :result, Term

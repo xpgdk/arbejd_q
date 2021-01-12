@@ -2,6 +2,8 @@ defmodule ArbejdQ.Types.Atom do
   @moduledoc """
   """
 
+  @type t :: atom()
+
   use Ecto.Type
 
   def type, do: :string
