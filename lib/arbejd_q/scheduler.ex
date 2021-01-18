@@ -10,7 +10,8 @@ defmodule ArbejdQ.Scheduler do
 
   alias ArbejdQ.{
     Execution,
-    Job
+    Job,
+    Resources
   }
 
   @type queue_config :: [
@@ -287,17 +288,19 @@ defmodule ArbejdQ.Scheduler do
           :queued
         end
 
-      job
-      |> Job.changeset(%{
-        status: new_status,
-        status_updated: DateTime.utc_now(),
-        stale_counter: stale_counter + 1
-      })
-      |> ArbejdQ.repo().update!
-
-      :ok
+      ArbejdQ.repo().transaction(fn ->
+        job
+        |> Job.changeset(%{
+          status: new_status,
+          status_updated: DateTime.utc_now(),
+          stale_counter: stale_counter + 1
+        })
+        |> ArbejdQ.repo().update!
+        |> Resources.free_resources()
+      end)
     rescue
-      Ecto.StaleEntryError -> :ok
+      Ecto.StaleEntryError ->
+        :ok
     end
   end
 
@@ -451,7 +454,7 @@ defmodule ArbejdQ.Scheduler do
 
       {state, remaining_slots - 1}
     else
-      {:error, :taken} ->
+      {:error, reason} when reason in [:taken, :missing_resources] ->
         {state, remaining_slots}
     end
   end

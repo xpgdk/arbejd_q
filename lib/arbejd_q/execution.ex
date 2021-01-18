@@ -1,7 +1,7 @@
 defmodule ArbejdQ.Execution do
   @moduledoc false
 
-  alias ArbejdQ.Job
+  alias ArbejdQ.{Job, Resources}
 
   require Logger
 
@@ -13,15 +13,22 @@ defmodule ArbejdQ.Execution do
 
   If the job cannot be taken, we assume that it is taken by someone else, and `{:error, :taken}` is returned.
   """
-  @spec take_job(Job.t()) :: {:ok, Job.t()} | {:error, :taken}
+  @spec take_job(Job.t()) :: {:ok, Job.t()} | {:error, :taken | :missing_resources}
   def take_job(job) do
     try do
-      {:ok, job} =
-        Job.changeset(job, %{status: :running, status_updated: DateTime.utc_now()})
-        |> ArbejdQ.repo().update()
+      ArbejdQ.repo().transaction(fn ->
+        Resources.acquire_resources(job)
 
-      {:ok, job}
+        {:ok, job} =
+          Job.changeset(job, %{status: :running, status_updated: DateTime.utc_now()})
+          |> ArbejdQ.repo().update()
+
+        job
+      end)
     rescue
+      Ecto.InvalidChangesetError ->
+        {:error, :missing_resources}
+
       Ecto.StaleEntryError ->
         {:error, :taken}
     end
@@ -31,13 +38,29 @@ defmodule ArbejdQ.Execution do
   def execute_job(%Job{status: :running} = job) do
     job = assign_worker_pid(job, self())
     parameters = ArbejdQ.get_job_parameters(job)
-    result = job.worker_module.run(job.id, parameters)
+
+    result =
+      try do
+        job_result = job.worker_module.run(job.id, parameters)
+        {:ok, job_result}
+      rescue
+        error ->
+          {:error, error}
+      end
 
     case ArbejdQ.get_job(job.id) do
       {:ok, job} ->
-        job = commit_result(job, result)
+        case result do
+          {:ok, job_result} ->
+            job = commit_result(job, job_result)
 
-        {:ok, job, result}
+            {:ok, job, job_result}
+
+          {:error, error} ->
+            job = commit_failure(job, error)
+
+            {:ok, job, error}
+        end
 
       {:error, :not_found} ->
         Logger.warn(
@@ -66,20 +89,29 @@ defmodule ArbejdQ.Execution do
     try do
       now = Timex.now()
 
-      params =
-        %{
-          status: :done,
-          status_updated: now,
-          completion_time: now,
-          result: result
-        }
-        |> maybe_set_expiration_time(job)
+      result =
+        ArbejdQ.repo().transaction(fn ->
+          params =
+            %{
+              status: :done,
+              status_updated: now,
+              completion_time: now,
+              result: result
+            }
+            |> maybe_set_expiration_time(job)
 
-      {:ok, job} =
-        Job.changeset(job, params)
-        |> ArbejdQ.repo().update
+          {:ok, job} =
+            Job.changeset(job, params)
+            |> ArbejdQ.repo().update
 
-      job
+          Resources.free_resources(job)
+
+          job
+        end)
+
+      case result do
+        {:ok, job} -> job
+      end
     rescue
       Ecto.StaleEntryError -> commit_result(ArbejdQ.repo().get(Job, job.id), result)
     end
@@ -107,18 +139,21 @@ defmodule ArbejdQ.Execution do
     try do
       now = Timex.now()
 
-      params =
-        %{
-          status: :failed,
-          status_updated: now,
-          completion_time: now,
-          result: result
-        }
-        |> maybe_set_expiration_time(job)
-
       {:ok, job} =
-        Job.changeset(job, params)
-        |> ArbejdQ.repo().update
+        ArbejdQ.repo().transaction(fn ->
+          params =
+            %{
+              status: :failed,
+              status_updated: now,
+              completion_time: now,
+              result: result
+            }
+            |> maybe_set_expiration_time(job)
+
+            Job.changeset(job, params)
+            |> ArbejdQ.repo().update!
+            |> Resources.free_resources()
+        end)
 
       job
     rescue

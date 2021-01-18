@@ -4,8 +4,13 @@ defmodule ArbejdQ do
   """
 
   alias ArbejdQ.Job
+  alias ArbejdQ.ResourceRequirement
+  alias ArbejdQ.Resource
 
   require Ecto.Query
+
+  @type job_opt :: {:resources, [ResourceRequirement.t()]}
+  @type job_opts :: [job_opt]
 
   @doc """
   Enqueue a new job.
@@ -15,11 +20,11 @@ defmodule ArbejdQ do
   `parameters` is validated using `worker_module` and `{:error, :invalid_params}`
   is returned if the validation fails.
   """
-  @spec enqueue_job(String.t, atom, term)
+  @spec enqueue_job(String.t, atom, term, job_opts)
   :: {:ok, Job.t} | {:error, Ecto.Changeset.t} | {:error, :invalid_params}
-  def enqueue_job(queue, worker_module, parameters) do
+  def enqueue_job(queue, worker_module, parameters, opts \\ []) do
     with {:ok, _params} <- worker_module.validate_params(parameters),
-         {:ok, job} <- create_job(queue, worker_module, parameters)
+         {:ok, job} <- create_job(queue, worker_module, parameters, opts)
     do
       scheduler_pid = Process.whereis(default_scheduler_name())
       if scheduler_pid != nil and Process.alive?(scheduler_pid) do
@@ -33,11 +38,20 @@ defmodule ArbejdQ do
     end
   end
 
+  @doc """
+  List all resources in the system.
+  """
+  @spec list_resources() :: [Resource.t()]
+  def list_resources() do
+    repo().all(Resource)
+  end
+
   @doc false
-  @spec create_job(String.t, atom, term) :: {:ok, Job.t} | {:error, Ecto.Changeset.t}
-  def create_job(queue, worker_module, parameters) do
+  @spec create_job(String.t, atom, term, job_opts) :: {:ok, Job.t} | {:error, Ecto.Changeset.t}
+  def create_job(queue, worker_module, parameters, opts \\ []) do
     case repo().transaction(Job.build(queue, worker_module, parameters, %{
-        status: :queued
+        status: :queued,
+        resource_requirements: Keyword.get(opts, :resources, [])
       })) do
       {:ok, changes} -> {:ok, changes[:update]}
       {:error, _, changeset, _} -> {:error, changeset}

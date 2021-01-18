@@ -41,6 +41,7 @@ defmodule ArbejdQ.Job do
     field(:completion_time, :utc_datetime_usec)
     field(:lock_version, :integer, default: 1)
     field(:stale_counter, :integer, default: 0)
+    embeds_many(:resource_requirements, ArbejdQ.ResourceRequirement)
 
     timestamps()
   end
@@ -79,6 +80,7 @@ defmodule ArbejdQ.Job do
           params
         )
       )
+      |> maybe_put_resource_requirements(params)
     )
     |> Ecto.Multi.run(:update, fn _repo, changes ->
       job = changes[:insert]
@@ -89,6 +91,13 @@ defmodule ArbejdQ.Job do
       {:ok, job}
     end)
   end
+
+  @spec maybe_put_resource_requirements(Ecto.Changeset.t(), map()) :: Ecto.Changeset.t()
+  defp maybe_put_resource_requirements(changeset, %{resource_requirements: resource_requirements}) do
+    changeset
+    |> put_embed(:resource_requirements, resource_requirements)
+  end
+  defp maybe_put_resource_requirements(changeset, _), do: changeset
 
   @spec list_queued_jobs(String.t()) :: %Ecto.Query{}
   def list_queued_jobs(queue_name) do

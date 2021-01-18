@@ -209,7 +209,7 @@ defmodule ArbejdQ.SchedulerTest do
                               duration: "abekat"
                             })
       assert {:ok, :failed, reason} = ArbejdQ.wait(job)
-      assert {:badarith, _} = reason
+      assert %ArithmeticError{message: "bad argument in arithmetic expression"} = reason
     end
   end
 
