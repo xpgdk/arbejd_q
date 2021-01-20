@@ -171,13 +171,15 @@ defmodule ArbejdQ.EphemeralResourceTest do
       })
       |> ArbejdQ.repo().update()
 
-      t1 = Task.async(fn ->
-        Scheduler.handle_info(:handle_timer, tags.scheduler_1_state)
-      end)
+      t1 =
+        Task.async(fn ->
+          Scheduler.handle_info(:handle_timer, tags.scheduler_1_state)
+        end)
 
-      t2 = Task.async(fn ->
-        Scheduler.handle_info(:handle_timer, tags.scheduler_1_state)
-      end)
+      t2 =
+        Task.async(fn ->
+          Scheduler.handle_info(:handle_timer, tags.scheduler_1_state)
+        end)
 
       Task.await(t1)
       Task.await(t2)
@@ -220,6 +222,46 @@ defmodule ArbejdQ.EphemeralResourceTest do
       ArbejdQ.wait(job_1)
       assert {:ok, job_2} = ArbejdQ.get_job(job_2)
       assert job_2.status == :queued
+    end
+
+    test "Jobs with non-overlapping resource requirements are run concurrently", tags do
+      resources_1 = [
+        %ResourceRequirement{
+          id: "1234",
+          count: 1,
+          type: :ephemeral
+        }
+      ]
+
+      resources_2 = [
+        %ResourceRequirement{
+          id: "abcdef",
+          count: 1,
+          type: :ephemeral
+        }
+      ]
+
+      assert {:ok, job_1} =
+               ArbejdQ.create_job("normal", ArbejdQ.Test.Worker, %{duration: 1},
+                 resources: resources_1
+               )
+
+      assert {:ok, job_2} =
+               ArbejdQ.create_job("normal", ArbejdQ.Test.Worker, %{duration: 1},
+                 resources: resources_2
+               )
+
+      tags.scheduler_1_state
+      |> Scheduler.schedule_jobs()
+
+      assert {:ok, job_1} = ArbejdQ.get_job(job_1)
+      assert job_1.status == :running
+
+      assert {:ok, job_2} = ArbejdQ.get_job(job_2)
+      assert job_2.status == :running
+
+      ArbejdQ.wait(job_1)
+      ArbejdQ.wait(job_2)
     end
   end
 end
