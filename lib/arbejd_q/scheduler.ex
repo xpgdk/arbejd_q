@@ -414,7 +414,7 @@ defmodule ArbejdQ.Scheduler do
       # We ask for more jobs than we have slots in order to deal with the
       # fact, that someone else may have started working on those jobs
       # concurrently with us.
-      jobs = ArbejdQ.list_queued_jobs(to_string(queue), available_slots * 2)
+      jobs = ArbejdQ.list_queued_jobs(to_string(queue), available_slots * 4)
 
       {state, _} =
         jobs
