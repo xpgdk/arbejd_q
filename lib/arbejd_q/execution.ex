@@ -150,9 +150,13 @@ defmodule ArbejdQ.Execution do
             }
             |> maybe_set_expiration_time(job)
 
-            Job.changeset(job, params)
-            |> ArbejdQ.repo().update!
-            |> Resources.free_resources()
+            job =
+              Job.changeset(job, params)
+              |> ArbejdQ.repo().update!
+
+            Resources.free_resources(job)
+
+            job
         end)
 
       job
