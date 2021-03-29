@@ -411,10 +411,7 @@ defmodule ArbejdQ.Scheduler do
     available_slots = min(total_slots - used_slots, available_workers)
 
     if available_slots > 0 do
-      # We ask for more jobs than we have slots in order to deal with the
-      # fact, that someone else may have started working on those jobs
-      # concurrently with us.
-      jobs = ArbejdQ.list_queued_jobs(to_string(queue), available_slots * 4)
+      jobs = ArbejdQ.list_queued_jobs(to_string(queue))
 
       {state, _} =
         jobs
