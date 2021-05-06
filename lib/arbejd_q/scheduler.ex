@@ -11,6 +11,7 @@ defmodule ArbejdQ.Scheduler do
   alias ArbejdQ.{
     Execution,
     Job,
+    Jobs,
     Resources
   }
 
@@ -296,6 +297,7 @@ defmodule ArbejdQ.Scheduler do
           stale_counter: stale_counter + 1
         })
         |> ArbejdQ.repo().update!
+        |> Jobs.notify_if_failed()
         |> Resources.free_resources()
       end)
     rescue

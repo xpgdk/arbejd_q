@@ -8,7 +8,9 @@ config :arbejd_q,
   repo: ArbejdQ.Test.Repo,
   stale_job_period: 5,
   default_expiration_duration: 5,
-  default_scheduler_name: :arbejd_q_scheduler
+  default_scheduler_name: :arbejd_q_scheduler,
+  job_failed_callback: &ArbejdQ.JobFailureCollector.job_failed/1
+
 
 config :arbejd_q, ArbejdQ.Test.Repo,
   adapter: Ecto.Adapters.Postgres,

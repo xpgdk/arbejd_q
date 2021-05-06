@@ -1,7 +1,7 @@
 defmodule ArbejdQ.Execution do
   @moduledoc false
 
-  alias ArbejdQ.{Job, Resources}
+  alias ArbejdQ.{Jobs, Job, Resources}
 
   require Logger
 
@@ -153,6 +153,7 @@ defmodule ArbejdQ.Execution do
             job =
               Job.changeset(job, params)
               |> ArbejdQ.repo().update!
+              |> Jobs.notify_if_failed()
 
             Resources.free_resources(job)
 

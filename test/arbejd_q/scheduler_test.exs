@@ -202,6 +202,9 @@ defmodule ArbejdQ.SchedulerTest do
     end
 
     test "Error in worker", _tags do
+      ArbejdQ.JobFailureCollector.start_link()
+      ArbejdQ.JobFailureCollector.clear()
+
       {:ok, job} =
         ArbejdQ.enqueue_job("normal",
                             ArbejdQ.Test.Worker,
@@ -210,6 +213,9 @@ defmodule ArbejdQ.SchedulerTest do
                             })
       assert {:ok, :failed, reason} = ArbejdQ.wait(job)
       assert %ArithmeticError{message: "bad argument in arithmetic expression"} = reason
+
+      assert [failed_job] = ArbejdQ.JobFailureCollector.get_failed_jobs()
+      assert failed_job.id == job.id
     end
   end
 
