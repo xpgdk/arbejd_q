@@ -9,7 +9,10 @@ defmodule ArbejdQ do
 
   require Ecto.Query
 
-  @type job_opt :: {:resources, [ResourceRequirement.t()]}
+  @type job_opt ::
+          {:resources, [ResourceRequirement.t()]}
+          | {:expiration_time, DateTime.t()}
+
   @type job_opts :: [job_opt]
 
   @doc """
@@ -47,12 +50,16 @@ defmodule ArbejdQ do
   end
 
   @doc false
-  @spec create_job(String.t, atom, term, job_opts) :: {:ok, Job.t} | {:error, Ecto.Changeset.t}
+  @spec create_job(String.t(), atom, term, job_opts) ::
+          {:ok, Job.t()} | {:error, Ecto.Changeset.t()}
   def create_job(queue, worker_module, parameters, opts \\ []) do
-    case repo().transaction(Job.build(queue, worker_module, parameters, %{
-        status: :queued,
-        resource_requirements: Keyword.get(opts, :resources, [])
-      })) do
+    case repo().transaction(
+           Job.build(queue, worker_module, parameters, %{
+             status: :queued,
+             resource_requirements: Keyword.get(opts, :resources, []),
+             expiration_time: Keyword.get(opts, :expriation_time)
+           })
+         ) do
       {:ok, changes} -> {:ok, changes[:update]}
       {:error, _, changeset, _} -> {:error, changeset}
     end
