@@ -57,7 +57,7 @@ defmodule ArbejdQ do
            Job.build(queue, worker_module, parameters, %{
              status: :queued,
              resource_requirements: Keyword.get(opts, :resources, []),
-             expiration_time: Keyword.get(opts, :expriation_time)
+             expiration_time: Keyword.get(opts, :expiration_time)
            })
          ) do
       {:ok, changes} -> {:ok, changes[:update]}
