@@ -97,6 +97,7 @@ defmodule ArbejdQ.Job do
     changeset
     |> put_embed(:resource_requirements, resource_requirements)
   end
+
   defp maybe_put_resource_requirements(changeset, _), do: changeset
 
   @spec list_queued_jobs(String.t()) :: %Ecto.Query{}
