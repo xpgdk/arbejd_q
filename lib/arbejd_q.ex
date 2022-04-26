@@ -181,9 +181,9 @@ defmodule ArbejdQ do
     |> repo().all
   end
 
-  @spec list_jobs() :: [Job.t()]
-  def list_jobs do
-    Job.list_all()
+  @spec list_jobs(Job.job_list_opts()) :: [Job.t()]
+  def list_jobs(job_list_opts \\ []) do
+    Job.list_all(job_list_opts)
     |> repo().all()
   end
 

@@ -43,6 +43,8 @@ defmodule ArbejdQ.Job do
     field(:stale_counter, :integer, default: 0)
     embeds_many(:resource_requirements, ArbejdQ.ResourceRequirement)
 
+    field(:parameters, Term, virtual: true)
+
     timestamps()
   end
 
@@ -142,10 +144,38 @@ defmodule ArbejdQ.Job do
     )
   end
 
-  @spec list_all :: %Ecto.Query{}
-  def list_all do
-    from(job in Job,
-      order_by: job.inserted_at
-    )
+  @type job_list_opt ::
+          {:include_params, boolean()}
+          | {:statuses, list(ArbejdQ.Types.Status.t()) | ArbejdQ.Types.Status.t()}
+          | {:updated_before, DateTime.t()}
+          | {:updated_after, DateTime.t()}
+
+  @type job_list_opts :: [job_list_opt()]
+
+  @spec list_all(job_list_opts) :: %Ecto.Query{}
+  def list_all(job_list_opts \\ []) do
+    base_query = from(job in Job, as: :job, order_by: job.inserted_at)
+
+    Enum.reduce(job_list_opts, base_query, &apply_opt/2)
   end
+
+  defp apply_opt({:include_params, true}, query) do
+    query
+    |> join(:left, [job: job], job2 in "arbejdq_jobs", on: job.id == job2.id, as: :job2)
+    |> select_merge([job2: job2], %{parameters: type(job2.parameters, Term)})
+  end
+
+  defp apply_opt({:statuses, statuses}, query) when is_list(statuses) do
+    where(query, [job: job], job.status in ^List.wrap(statuses))
+  end
+
+  defp apply_opt({:updated_before, datetime}, query) do
+    where(query, [job: job], job.status_updated < ^datetime)
+  end
+
+  defp apply_opt({:updated_after, datetime}, query) do
+    where(query, [job: job], job.status_updated > ^datetime)
+  end
+
+  defp apply_opt(_, query), do: query
 end
