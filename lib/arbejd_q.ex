@@ -172,18 +172,15 @@ defmodule ArbejdQ do
 
   @spec list_stale_jobs(String.t()) :: [Job.t()]
   def list_stale_jobs(queue) do
-    stale_period = stale_job_period()
-
-    Job.list_stale_jobs(
-      queue,
-      Timex.subtract(Timex.now(), Timex.Duration.from_seconds(stale_period))
-    )
+    queue
+    |> Job.list_stale_jobs(current_stale_job_border_timestamp())
     |> repo().all
   end
 
   @spec list_jobs(Job.job_list_opts()) :: [Job.t()]
   def list_jobs(job_list_opts \\ []) do
-    Job.list_all(job_list_opts)
+    job_list_opts
+    |> Job.list()
     |> repo().all()
   end
 
@@ -220,4 +217,7 @@ defmodule ArbejdQ do
   def repo do
     Application.get_env(:arbejd_q, :repo)
   end
+
+  defp current_stale_job_border_timestamp,
+    do: DateTime.add(DateTime.utc_now(), stale_job_period(), :second)
 end
