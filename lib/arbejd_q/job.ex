@@ -70,6 +70,22 @@ defmodule ArbejdQ.Job do
     timestamps()
   end
 
+  @fields_for_job_list ~w(
+    id
+    queue
+    worker_module
+    progress
+    worker_pid
+    status
+    status_updated
+    expiration_time
+    completion_time
+    lock_version
+    stale_counter
+    inserted_at
+    updated_at
+)a
+
   @spec changeset(Job.t(), map) :: Ecto.Changeset.t()
   def changeset(struct, params) do
     struct
@@ -174,7 +190,7 @@ defmodule ArbejdQ.Job do
 
   @spec list(job_list_opts) :: %Ecto.Query{}
   def list(job_list_opts \\ []) do
-    base_query = from(job in Job, as: :job)
+    base_query = from(job in Job, as: :job, select: ^@fields_for_job_list)
 
     job_list_opts
     |> Keyword.put_new(:sort, :asc)
