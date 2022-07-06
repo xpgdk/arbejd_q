@@ -36,7 +36,8 @@ defmodule ArbejdQ.Job do
   @type max_allowed_age_hrs :: non_neg_integer()
 
   @type job_list_opt ::
-          {:include_params, boolean()}
+          {:include_parameters, boolean()}
+          | {:include_result, boolean()}
           | {:jobs_to_show, jobs_amount()}
           | {:sort, job_list_sort_direction()}
           | {:queue, queue_name()}
@@ -73,20 +74,21 @@ defmodule ArbejdQ.Job do
   end
 
   @fields_for_job_list ~w(
-    id
-    queue
-    worker_module
-    progress
-    worker_pid
-    status
-    status_updated
-    expiration_time
-    completion_time
-    lock_version
-    stale_counter
-    inserted_at
-    updated_at
-)a
+      id
+      queue
+      worker_module
+      progress
+      worker_pid
+      status
+      status_updated
+      expiration_time
+      completion_time
+      lock_version
+      stale_counter
+      resource_requirements
+      inserted_at
+      updated_at
+  )a
 
   @spec changeset(Job.t(), map) :: Ecto.Changeset.t()
   def changeset(struct, params) do
@@ -152,7 +154,8 @@ defmodule ArbejdQ.Job do
   def list_queued_jobs(queue_name) do
     [
       queue: queue_name,
-      statuses: :queued
+      statuses: :queued,
+      include_result: true
     ]
     |> list()
   end
@@ -203,10 +206,14 @@ defmodule ArbejdQ.Job do
     order_by(query, [job: job], {^sort_direction, job.inserted_at})
   end
 
-  defp apply_opt({:include_params, true}, query) do
+  defp apply_opt({:include_parameters, true}, query) do
     query
     |> join(:left, [job: job], job2 in "arbejdq_jobs", on: job.id == job2.id, as: :job2)
     |> select_merge([job2: job2], %{parameters: type(job2.parameters, Term)})
+  end
+
+  defp apply_opt({:include_result, true}, query) do
+    select_merge(query, [job: job], ^[:result])
   end
 
   defp apply_opt({:statuses, statuses}, query) do
