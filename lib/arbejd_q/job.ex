@@ -33,17 +33,19 @@ defmodule ArbejdQ.Job do
   @type job_list_sort_direction :: :asc | :desc
   @type queue_name :: String.t()
   @type jobs_amount :: non_neg_integer()
+  @type max_allowed_age_hrs :: non_neg_integer()
 
   @type job_list_opt ::
           {:include_params, boolean()}
+          | {:jobs_to_show, jobs_amount()}
+          | {:sort, job_list_sort_direction()}
           | {:queue, queue_name()}
           | {:statuses, list(ArbejdQ.Types.Status.t()) | ArbejdQ.Types.Status.t()}
           | {:updated_before, DateTime.t()}
           | {:updated_after, DateTime.t()}
           | {:expired_before, DateTime.t()}
           | {:worker_module, worker_module()}
-          | {:sort, job_list_sort_direction()}
-          | {:jobs_to_show, jobs_amount()}
+          | {:exclude_finished_export_jobs, max_allowed_age_hrs()}
 
   @type job_list_opts :: [job_list_opt()]
 
@@ -221,6 +223,18 @@ defmodule ArbejdQ.Job do
 
   defp apply_opt({:updated_after, datetime}, query) do
     where(query, [job: job], job.status_updated > ^datetime)
+  end
+
+  defp apply_opt({:exclude_finished_export_jobs, max_allowed_age_hrs}, query) do
+    max_age_datetime = Timex.shift(Timex.now(), hours: -max_allowed_age_hrs)
+
+    where(
+      query,
+      [job: job],
+      not (job.worker_module == ^QarmaInspect.Exporter.V1 and
+             job.status == :done and
+             job.completion_time <= ^max_age_datetime)
+    )
   end
 
   defp apply_opt({:expired_before, datetime}, query) do
