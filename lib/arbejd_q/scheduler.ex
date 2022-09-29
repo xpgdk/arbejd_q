@@ -26,6 +26,7 @@ defmodule ArbejdQ.Scheduler do
            }}
           | {:max_jobs, non_neg_integer()}
           | {:poll_interval, non_neg_integer()}
+          | {:failed_job_handler, Module.t() | nil}
   @type opts :: [opt]
 
   @typep worker :: %{
@@ -35,6 +36,7 @@ defmodule ArbejdQ.Scheduler do
          }
 
   @typep state :: %{
+           failed_job_handler: Module.t() | nil,
            queues: [{:atom, queue_config}],
            max_jobs: non_neg_integer,
            poll_interval: non_neg_integer,
@@ -149,6 +151,7 @@ defmodule ArbejdQ.Scheduler do
     initial_state =
       do_reconfigure(
         %{
+          failed_job_handler: nil,
           queues: [],
           max_jobs: 0,
           poll_interval: 0,
@@ -272,14 +275,14 @@ defmodule ArbejdQ.Scheduler do
     state.queues
     |> Enum.each(fn {queue, _} ->
       stale_jobs = ArbejdQ.list_stale_jobs(to_string(queue))
-      Enum.each(stale_jobs, &release_job(&1))
+      Enum.each(stale_jobs, &release_job(state, &1))
     end)
 
     state
   end
 
-  @spec release_job(Job.t()) :: :ok
-  defp release_job(%Job{stale_counter: stale_counter} = job) do
+  @spec release_job(state(), Job.t()) :: :ok
+  defp release_job(state, %Job{stale_counter: stale_counter} = job) do
     try do
       new_status =
         if stale_counter > 1 do
@@ -289,19 +292,33 @@ defmodule ArbejdQ.Scheduler do
         end
 
       ArbejdQ.repo().transaction(fn ->
-        job
-        |> Job.changeset(%{
-          status: new_status,
-          status_updated: DateTime.utc_now(),
-          stale_counter: stale_counter + 1
-        })
-        |> ArbejdQ.repo().update!
-        |> Resources.free_resources()
+        job =
+          job
+          |> Job.changeset(%{
+            status: new_status,
+            status_updated: DateTime.utc_now(),
+            stale_counter: stale_counter + 1
+          })
+          |> ArbejdQ.repo().update!
+
+        Resources.free_resources(job)
+
+        if new_status == :failed do
+          notify_failed_stale_job(state, job)
+        end
       end)
     rescue
       Ecto.StaleEntryError ->
         :ok
     end
+  end
+
+  @spec notify_failed_stale_job(state(), Job.t()) :: :ok
+  def notify_failed_stale_job(%{failed_job_handler: nil}, _), do: :ok
+
+  def notify_failed_stale_job(%{failed_job_handler: failure_handler}, %Job{} = job) do
+    failure_handler.job_failed(job, :stale)
+    :ok
   end
 
   @spec handle_poll_timeout(state) :: state
@@ -423,6 +440,16 @@ defmodule ArbejdQ.Scheduler do
     end
   end
 
+  @spec error_handler_function(state(), ArbejdQ.FailedJobHandler.trigger()) ::
+          (Job.t() -> :ok) | nil
+  def error_handler_function(%{failed_job_handler: nil}, _trigger), do: nil
+
+  def error_handler_function(%{failed_job_handler: failed_job_handler}, trigger) do
+    &failed_job_handler.job_failed(&1, trigger)
+  end
+
+  def error_handler_function(_, _), do: nil
+
   @spec try_execute_job({state, non_neg_integer}, Job.t(), atom) :: {state, non_neg_integer}
   defp try_execute_job({state, 0}, _, _), do: {state, 0}
 
@@ -432,7 +459,7 @@ defmodule ArbejdQ.Scheduler do
 
       {worker_pid, _} =
         spawn_monitor(fn ->
-          case Execution.execute_job(job) do
+          case Execution.execute_job(job, error_handler_function(state, :run_failure)) do
             {:ok, job, _result} ->
               GenServer.cast(scheduler_pid, {:job_done, job.id})
 
@@ -530,7 +557,7 @@ defmodule ArbejdQ.Scheduler do
           reason ->
             # Failure means that the result may not have been reported
             {:ok, job} = ArbejdQ.get_job(worker.job_id)
-            Execution.commit_failure(job, reason)
+            Execution.commit_failure(job, reason, error_handler_function(state, :run_failure))
 
             state
         end
@@ -558,13 +585,15 @@ defmodule ArbejdQ.Scheduler do
 
     max_jobs = Keyword.get(opts, :max_jobs, 0)
     poll_interval = Keyword.get(opts, :poll_interval, 30)
+    failed_job_handler = Keyword.get(opts, :failed_job_handler, nil)
 
     Map.merge(
       state,
       %{
         max_jobs: max_jobs,
         poll_interval: poll_interval,
-        queues: queues
+        queues: queues,
+        failed_job_handler: failed_job_handler
       }
     )
   end

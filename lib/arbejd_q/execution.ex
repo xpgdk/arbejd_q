@@ -34,8 +34,9 @@ defmodule ArbejdQ.Execution do
     end
   end
 
-  @spec execute_job(Job.t()) :: {:ok, Job.t(), term} | {:error, :not_found}
-  def execute_job(%Job{status: :running} = job) do
+  @spec execute_job(Job.t(), (Job.t() -> :ok) | nil) ::
+          {:ok, Job.t(), term} | {:error, :not_found}
+  def execute_job(%Job{status: :running} = job, error_callback \\ nil) do
     job = assign_worker_pid(job, self())
     parameters = ArbejdQ.get_job_parameters(job)
 
@@ -57,7 +58,7 @@ defmodule ArbejdQ.Execution do
             {:ok, job, job_result}
 
           {:error, error} ->
-            job = commit_failure(job, error)
+            job = commit_failure(job, error, error_callback)
 
             {:ok, job, error}
         end
@@ -134,8 +135,9 @@ defmodule ArbejdQ.Execution do
 
   defp maybe_set_expiration_time(params, _job), do: params
 
-  @spec commit_failure(Job.t(), any) :: Job.t()
-  def commit_failure(%Job{status: status} = job, result) when status in [:queued, :running] do
+  @spec commit_failure(Job.t(), any, (Job.t() -> :ok) | nil) :: Job.t()
+  def commit_failure(%Job{status: status} = job, result, callback)
+      when status in [:queued, :running] do
     try do
       now = Timex.now()
 
@@ -150,20 +152,24 @@ defmodule ArbejdQ.Execution do
             }
             |> maybe_set_expiration_time(job)
 
-            job =
-              Job.changeset(job, params)
-              |> ArbejdQ.repo().update!
+          job =
+            Job.changeset(job, params)
+            |> ArbejdQ.repo().update!
 
-            Resources.free_resources(job)
+          Resources.free_resources(job)
 
-            job
+          if callback do
+            callback.(job)
+          end
+
+          job
         end)
 
       job
     rescue
-      Ecto.StaleEntryError -> commit_failure(job, result)
+      Ecto.StaleEntryError -> commit_failure(job, result, callback)
     end
   end
 
-  def commit_failure(%Job{} = job, _result), do: job
+  def commit_failure(%Job{} = job, _result, _callback), do: job
 end

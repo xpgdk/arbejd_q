@@ -3,7 +3,7 @@ defmodule ArbejdQ.SchedulerTest do
 
   alias ArbejdQ.{
     Scheduler,
-    Job,
+    Job
   }
 
   setup do
@@ -11,63 +11,71 @@ defmodule ArbejdQ.SchedulerTest do
   end
 
   defp named_scheduler(tags) do
-    {:ok, pid} = Scheduler.start_link(
-      [
-        poll_interval: 60 * 60, # So high that it will never occur during the test
-        max_jobs: 1,
-        queues: [
-          normal: [
-            max_jobs: 1,
-            priority: 1,
-          ],
-          high: [
-            max_jobs: 1,
-            priority: 10,
-          ],
+    {:ok, pid} =
+      Scheduler.start_link(
+        [
+          # So high that it will never occur during the test
+          poll_interval: 60 * 60,
+          max_jobs: 1,
+          queues: [
+            normal: [
+              max_jobs: 1,
+              priority: 1
+            ],
+            high: [
+              max_jobs: 1,
+              priority: 10
+            ]
+          ]
         ],
-      ], name: :arbejd_q_scheduler)
+        name: :arbejd_q_scheduler
+      )
 
-
-    on_exit fn ->
+    on_exit(fn ->
       # Ensure that the Scheduler does not run after the test has been completed
       Process.exit(pid, :kill)
-    end
+    end)
 
     Map.merge(
       tags,
       %{
         pid: pid
-      })
+      }
+    )
   end
 
   defp scheduler(tags) do
-    {:ok, pid} = Scheduler.start_link(
-      [
+    {:ok, pid} =
+      Scheduler.start_link(
+        failed_job_handler: ArbejdQ.Test.FailureHandler,
         poll_interval: 1,
         max_jobs: 1,
         queues: [
           normal: [
             max_jobs: 1,
-            priority: 1,
+            priority: 1
           ],
           high: [
             max_jobs: 1,
-            priority: 10,
-          ],
-        ],
-      ])
+            priority: 10
+          ]
+        ]
+      )
 
+    {:ok, failed_job_agent_pid} = ArbejdQ.Test.FailureHandler.start_link()
 
-    on_exit fn ->
+    on_exit(fn ->
       # Ensure that the Scheduler does not run after the test has been completed
       Process.exit(pid, :kill)
-    end
+      Process.exit(failed_job_agent_pid, :kill)
+    end)
 
     Map.merge(
       tags,
       %{
         pid: pid
-      })
+      }
+    )
   end
 
   defp dummy_state(tags) do
@@ -78,11 +86,11 @@ defmodule ArbejdQ.SchedulerTest do
       queues: [
         high: [
           max_jobs: 1,
-          priority: 10,
+          priority: 10
         ],
         normal: [
           max_jobs: 2,
-          priority: 1,
+          priority: 1
         ]
       ],
       disable_timer: false,
@@ -93,7 +101,8 @@ defmodule ArbejdQ.SchedulerTest do
       tags,
       %{
         state: state
-      })
+      }
+    )
   end
 
   describe "Running named scheduler" do
@@ -101,11 +110,14 @@ defmodule ArbejdQ.SchedulerTest do
 
     test "Basic scheduler test", _tags do
       {:ok, job} =
-        ArbejdQ.enqueue_job("normal",
-                            ArbejdQ.Test.Worker,
-                            %{
-                              duration: 1
-                            })
+        ArbejdQ.enqueue_job(
+          "normal",
+          ArbejdQ.Test.Worker,
+          %{
+            duration: 1
+          }
+        )
+
       {:ok, :done, _result} = ArbejdQ.wait(job.id)
     end
 
@@ -121,11 +133,14 @@ defmodule ArbejdQ.SchedulerTest do
 
     test "Basic scheduler test", _tags do
       {:ok, job} =
-        ArbejdQ.enqueue_job("normal",
-                            ArbejdQ.Test.Worker,
-                            %{
-                              duration: 1
-                            })
+        ArbejdQ.enqueue_job(
+          "normal",
+          ArbejdQ.Test.Worker,
+          %{
+            duration: 1
+          }
+        )
+
       {:ok, :done, _result} = ArbejdQ.wait(job.id)
 
       Process.sleep(6000)
@@ -135,21 +150,21 @@ defmodule ArbejdQ.SchedulerTest do
     end
 
     test "Nonexisting worker injected into database", _tags do
-      assert {:ok, job} =
-        ArbejdQ.create_job("normal", NonExisting.Worker, %{})
+      assert {:ok, job} = ArbejdQ.create_job("normal", NonExisting.Worker, %{})
 
       assert {:ok, :failed, _reason} = ArbejdQ.wait(job)
     end
 
     test "Stale jobs", _tags do
       query =
-        Job.build("normal",
-            ArbejdQ.Test.Worker,
-            %{duration: 1},
-            %{
-              status: :running,
-              status_updated: DateTime.utc_now
-            }
+        Job.build(
+          "normal",
+          ArbejdQ.Test.Worker,
+          %{duration: 1},
+          %{
+            status: :running,
+            status_updated: DateTime.utc_now()
+          }
         )
 
       job =
@@ -168,13 +183,40 @@ defmodule ArbejdQ.SchedulerTest do
       assert {:error, :not_found} = ArbejdQ.get_job(job)
     end
 
+    test "Stale job with stale_counter = 2 cause job to fail", _tags do
+      query =
+        Job.build(
+          "normal",
+          ArbejdQ.Test.Worker,
+          %{duration: 1},
+          %{
+            status: :running,
+            stale_counter: 2,
+            status_updated: DateTime.utc_now()
+          }
+        )
+
+      job =
+        case ArbejdQ.repo().transaction(query) do
+          {:ok, changes} -> changes[:update]
+        end
+
+      {:ok, :failed, nil} = ArbejdQ.wait(job.id)
+
+      job_id = job.id
+      assert [{:stale, %Job{id: ^job_id}}] = ArbejdQ.Test.FailureHandler.get_failed_jobs()
+    end
+
     test "Concurrent results", _tags do
       {:ok, job} =
-        ArbejdQ.enqueue_job("normal",
-                            ArbejdQ.Test.Worker,
-                            %{
-                              duration: 2
-                            })
+        ArbejdQ.enqueue_job(
+          "normal",
+          ArbejdQ.Test.Worker,
+          %{
+            duration: 2
+          }
+        )
+
       # Wait long enough for the scheduler to start executing
       # the job
       Process.sleep(1200)
@@ -185,12 +227,10 @@ defmodule ArbejdQ.SchedulerTest do
 
       # Now inject a result before the job completes.
       job
-      |> Job.changeset(
-        %{
-          status: :done,
-          result: 42
-        }
-      )
+      |> Job.changeset(%{
+        status: :done,
+        result: 42
+      })
       |> ArbejdQ.repo().update!
 
       # Wait long enough for the job completion
@@ -203,13 +243,19 @@ defmodule ArbejdQ.SchedulerTest do
 
     test "Error in worker", _tags do
       {:ok, job} =
-        ArbejdQ.enqueue_job("normal",
-                            ArbejdQ.Test.Worker,
-                            %{
-                              duration: "abekat"
-                            })
+        ArbejdQ.enqueue_job(
+          "normal",
+          ArbejdQ.Test.Worker,
+          %{
+            duration: "abekat"
+          }
+        )
+
       assert {:ok, :failed, reason} = ArbejdQ.wait(job)
       assert %ArithmeticError{message: "bad argument in arithmetic expression"} = reason
+
+      job_id = job.id
+      assert [{:run_failure, %Job{id: ^job_id}}] = ArbejdQ.Test.FailureHandler.get_failed_jobs()
     end
   end
 
@@ -218,11 +264,13 @@ defmodule ArbejdQ.SchedulerTest do
 
     test "schedule_jobs/1", tags do
       assert {:ok, job_1} =
-        ArbejdQ.enqueue_job("normal",
-                            ArbejdQ.Test.Worker,
-                            %{
-                              duration: 1,
-                            })
+               ArbejdQ.enqueue_job(
+                 "normal",
+                 ArbejdQ.Test.Worker,
+                 %{
+                   duration: 1
+                 }
+               )
 
       new_state = Scheduler.schedule_jobs(tags.state)
       assert [worker] = new_state.workers
@@ -236,22 +284,23 @@ defmodule ArbejdQ.SchedulerTest do
 
     test "get_scheduler_info", tags do
       info = Scheduler.calculate_scheduler_info(tags.state)
+
       assert info == %{
-        global: %{
-          total_workers: 3,
-          used_workers: 0
-        },
-        queues: %{
-          high: %{
-            total_slots: 1,
-            used_slots: 0
-          },
-          normal: %{
-            total_slots: 2,
-            used_slots: 0
-          }
-        }
-      }
+               global: %{
+                 total_workers: 3,
+                 used_workers: 0
+               },
+               queues: %{
+                 high: %{
+                   total_slots: 1,
+                   used_slots: 0
+                 },
+                 normal: %{
+                   total_slots: 2,
+                   used_slots: 0
+                 }
+               }
+             }
     end
   end
 end
