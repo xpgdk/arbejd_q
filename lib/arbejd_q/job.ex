@@ -47,6 +47,7 @@ defmodule ArbejdQ.Job do
           | {:expired_before, DateTime.t()}
           | {:worker_module, worker_module()}
           | {:exclude_finished_export_jobs, max_allowed_age_hrs()}
+          | {:limit, integer()}
 
   @type job_list_opts :: [job_list_opt()]
 
