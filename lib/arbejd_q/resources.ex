@@ -42,6 +42,8 @@ defmodule ArbejdQ.Resources do
   defp free_resource(%ResourceRequirement{type: :ephemeral, id: resource_id}) do
     Resource.build_ephemeral(resource_id)
     |> ArbejdQ.repo().delete!()
+  rescue
+    Ecto.StaleEntryError ->
+      :ok
   end
-
 end
