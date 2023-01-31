@@ -26,7 +26,7 @@ defmodule ArbejdQ.Scheduler do
            }}
           | {:max_jobs, non_neg_integer()}
           | {:poll_interval, non_neg_integer()}
-          | {:failed_job_handler, Module.t() | nil}
+          | {:failed_job_handler, module() | nil}
   @type opts :: [opt]
 
   @typep worker :: %{
@@ -36,7 +36,7 @@ defmodule ArbejdQ.Scheduler do
          }
 
   @typep state :: %{
-           failed_job_handler: Module.t() | nil,
+           failed_job_handler: module() | nil,
            queues: [{:atom, queue_config}],
            max_jobs: non_neg_integer,
            poll_interval: non_neg_integer,
