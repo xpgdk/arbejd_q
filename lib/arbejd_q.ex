@@ -3,6 +3,7 @@ defmodule ArbejdQ do
   Documentation for ArbejdQ.
   """
 
+  alias ArbejdQ.Execution
   alias ArbejdQ.Job
   alias ArbejdQ.ResourceRequirement
   alias ArbejdQ.Resource
@@ -38,6 +39,34 @@ defmodule ArbejdQ do
     else
       :error -> {:error, :invalid_params}
       {:error, changeset} -> {:error, changeset}
+    end
+  end
+
+  @spec enqueue_and_wait(String.t(), atom, term, job_opts(), timeout()) ::
+          {:ok, :failed | :done, any}
+          | {:error, :timeout}
+          | {:error, :not_found}
+          | {:error, Ecto.Changeset.t()}
+          | {:error, :invalid_params}
+  def enqueue_and_wait(queue, worker_module, parameters, opts, timeout \\ :infinity) do
+    running_as_job_id = Process.get(ArbejdQ.JobId)
+
+    if running_as_job_id != nil do
+      case Execution.sync_execute(worker_module, running_as_job_id, parameters) do
+        {:ok, result} ->
+          {:ok, :done, result}
+
+        {:error, error} ->
+          {:ok, :failed, error}
+      end
+    else
+      case enqueue_job(queue, worker_module, parameters, opts) do
+        {:ok, %Job{} = job} ->
+          wait(job, timeout)
+
+        error ->
+          error
+      end
     end
   end
 

@@ -107,4 +107,60 @@ defmodule ArbejdQTest do
     assert stale_job.id == job.id
   end
 
+  describe "Scheduler with one queue and one slot" do
+    setup do
+      Ecto.Adapters.SQL.Sandbox.mode(ArbejdQ.Test.Repo, {:shared, self()})
+
+      {:ok, pid} =
+        ArbejdQ.Scheduler.start_link(
+          [
+            # So high that it will never occur during the test
+            poll_interval: 60 * 60,
+            max_jobs: 1,
+            queues: [
+              normal: [
+                max_jobs: 1,
+                priority: 1
+              ],
+              high: [
+                max_jobs: 1,
+                priority: 10
+              ]
+            ]
+          ],
+          name: :arbejd_q_scheduler
+        )
+
+      on_exit(fn ->
+        # Ensure that the Scheduler does not run after the test has been completed
+        Process.exit(pid, :kill)
+      end)
+
+      %{
+        pid: pid
+      }
+    end
+
+    test "Calling enqueue_and_wait from a running worker will run the nested job synchronously", _tags do
+      # Only one job can be run at a time, so if the worker enqueues any jobs, the test will
+      # time out.
+      assert {:ok, job} =
+               ArbejdQ.enqueue_job("normal", ArbejdQ.Test.WorkerCallingWorker, %{
+                 queue: "normal",
+                 parameters: %{duration: 1}
+               }, [])
+
+      assert {:ok, :done, {:ok, 1}} = ArbejdQ.wait(job)
+    end
+
+    test "Calling enqueue_and_wait from a running worker will run the nested job synchronously (1)", _tags do
+      # Only one job can be run at a time, so if the worker enqueues any jobs, the test will
+      # time out.
+      assert {:ok, :done, {:ok, 1}} =
+               ArbejdQ.enqueue_and_wait("normal", ArbejdQ.Test.WorkerCallingWorker, %{
+                 queue: "normal",
+                 parameters: %{duration: 1}
+               }, [])
+    end
+  end
 end

@@ -36,18 +36,13 @@ defmodule ArbejdQ.Execution do
 
   @spec execute_job(Job.t(), (Job.t() -> :ok) | nil) ::
           {:ok, Job.t(), term} | {:error, :not_found}
-  def execute_job(%Job{status: :running} = job, error_callback \\ nil) do
+  def execute_job(%Job{status: :running, id: job_id} = job, error_callback \\ nil) do
     job = assign_worker_pid(job, self())
     parameters = ArbejdQ.get_job_parameters(job)
 
-    result =
-      try do
-        job_result = job.worker_module.run(job.id, parameters)
-        {:ok, job_result}
-      rescue
-        error ->
-          {:error, error}
-      end
+    Process.put(ArbejdQ.JobId, job_id)
+
+    result = sync_execute(job.worker_module, job.id, parameters)
 
     case ArbejdQ.get_job(job.id) do
       {:ok, job} ->
@@ -70,6 +65,19 @@ defmodule ArbejdQ.Execution do
 
         {:error, :not_found}
     end
+  end
+
+  @spec sync_execute(module(), String.t(), map()) :: {:ok, any()} | {:error, any()}
+  def sync_execute(worker_module, job_id, parameters) do
+
+    try do
+      job_result = worker_module.run(job_id, parameters)
+      {:ok, job_result}
+    rescue
+      error ->
+        {:error, error}
+    end
+
   end
 
   @spec assign_worker_pid(Job.t(), pid) :: Job.t()
