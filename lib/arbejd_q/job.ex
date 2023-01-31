@@ -25,6 +25,32 @@ defmodule ArbejdQ.Job do
     Job
   }
 
+  @type uuid :: binary()
+  @type id :: uuid()
+
+  @type worker_module :: ArbejdQ.Types.Atom.t()
+
+  @type job_list_sort_direction :: :asc | :desc
+  @type queue_name :: String.t()
+  @type jobs_amount :: non_neg_integer()
+  @type max_allowed_age_hrs :: non_neg_integer()
+
+  @type job_list_opt ::
+          {:include_parameters, boolean()}
+          | {:include_result, boolean()}
+          | {:jobs_to_show, jobs_amount()}
+          | {:sort, job_list_sort_direction()}
+          | {:queue, queue_name()}
+          | {:statuses, list(ArbejdQ.Types.Status.t()) | ArbejdQ.Types.Status.t()}
+          | {:updated_before, DateTime.t()}
+          | {:updated_after, DateTime.t()}
+          | {:expired_before, DateTime.t()}
+          | {:worker_module, worker_module()}
+          | {:exclude_finished_export_jobs, max_allowed_age_hrs()}
+          | {:limit, integer()}
+
+  @type job_list_opts :: [job_list_opt()]
+
   @primary_key {:id, Ecto.UUID, autogenerate: true}
   @foreign_key_type Ecto.UUID
   @timestamps_opts [type: :utc_datetime_usec]
@@ -43,8 +69,27 @@ defmodule ArbejdQ.Job do
     field(:stale_counter, :integer, default: 0)
     embeds_many(:resource_requirements, ArbejdQ.ResourceRequirement)
 
+    field(:parameters, Term, virtual: true)
+
     timestamps()
   end
+
+  @fields_for_job_list ~w(
+      id
+      queue
+      worker_module
+      progress
+      worker_pid
+      status
+      status_updated
+      expiration_time
+      completion_time
+      lock_version
+      stale_counter
+      resource_requirements
+      inserted_at
+      updated_at
+  )a
 
   @spec changeset(Job.t(), map) :: Ecto.Changeset.t()
   def changeset(struct, params) do
@@ -65,7 +110,7 @@ defmodule ArbejdQ.Job do
     |> optimistic_lock(:lock_version)
   end
 
-  @spec build(String.t(), atom, term, map) :: Ecto.Multi.t()
+  @spec build(queue_name, worker_module, term, map) :: Ecto.Multi.t()
   def build(queue, worker_module, parameters, params \\ %{}) do
     Ecto.Multi.new()
     |> Ecto.Multi.insert(
@@ -94,57 +139,139 @@ defmodule ArbejdQ.Job do
 
   @spec maybe_put_resource_requirements(Ecto.Changeset.t(), map()) :: Ecto.Changeset.t()
   defp maybe_put_resource_requirements(changeset, %{resource_requirements: resource_requirements}) do
-    changeset
-    |> put_embed(:resource_requirements, resource_requirements)
+    put_embed(changeset, :resource_requirements, resource_requirements)
   end
+
   defp maybe_put_resource_requirements(changeset, _), do: changeset
 
-  @spec list_queued_jobs(String.t()) :: %Ecto.Query{}
-  def list_queued_jobs(queue_name) do
-    from(job in Job,
-      where: job.queue == ^queue_name and job.status == ^:queued,
-      order_by: job.inserted_at
-    )
-  end
-
-  @spec list_queued_jobs(String.t(), non_neg_integer) :: %Ecto.Query{}
-  def list_queued_jobs(queue_name, max_jobs) do
-    from(job in Job,
-      where: job.queue == ^queue_name and job.status == ^:queued,
-      order_by: job.inserted_at,
-      limit: ^max_jobs
-    )
-  end
-
-  @spec get_job(String.t()) :: %Ecto.Query{}
+  @spec get_job(id()) :: %Ecto.Query{}
   def get_job(job_id) do
     from(job in Job,
       where: job.id == ^job_id
     )
   end
 
-  @spec list_stale_jobs(String.t(), DateTime.t()) :: %Ecto.Query{}
+  @spec list_queued_jobs(queue_name) :: %Ecto.Query{}
+  def list_queued_jobs(queue_name) do
+    [
+      queue: queue_name,
+      statuses: :queued,
+      include_result: true
+    ]
+    |> list()
+  end
+
+  @spec list_queued_jobs(queue_name, jobs_amount) :: %Ecto.Query{}
+  def list_queued_jobs(queue_name, max_jobs) do
+    [
+      queue: queue_name,
+      statuses: :queued,
+      limit: max_jobs
+    ]
+    |> list()
+  end
+
+  @spec list_stale_jobs(queue_name, DateTime.t()) :: %Ecto.Query{}
   def list_stale_jobs(queue_name, stale_progress_timestamp) do
-    from(job in Job,
-      where: job.queue == ^queue_name and job.status == ^:running,
-      where: job.status_updated < ^stale_progress_timestamp,
-      order_by: job.inserted_at
-    )
+    [
+      queue: queue_name,
+      updated_before: stale_progress_timestamp,
+      statuses: :running
+    ]
+    |> list()
   end
 
-  @spec list_expired_jobs(String.t(), DateTime.t()) :: %Ecto.Query{}
+  @spec list_expired_jobs(queue_name, DateTime.t()) :: %Ecto.Query{}
   def list_expired_jobs(queue_name, expiration_time) do
-    from(job in Job,
-      where: job.queue == ^queue_name and job.status == ^:done,
-      where: job.expiration_time < ^expiration_time,
-      order_by: job.inserted_at
+    [
+      queue: queue_name,
+      expired_before: expiration_time,
+      statuses: :done
+    ]
+    |> list()
+  end
+
+  @spec list_all() :: %Ecto.Query{}
+  def list_all, do: list([])
+
+  @spec list(job_list_opts) :: %Ecto.Query{}
+  def list(job_list_opts \\ []) do
+    base_query = from(job in Job, as: :job, select: ^@fields_for_job_list)
+
+    job_list_opts
+    |> Keyword.put_new(:sort, :asc)
+    |> Enum.reduce(base_query, &apply_opt/2)
+  end
+
+  defp apply_opt({:sort, sort_direction}, query) when sort_direction in [:asc, :desc] do
+    order_by(query, [job: job], {^sort_direction, job.inserted_at})
+  end
+
+  defp apply_opt({:include_parameters, true}, query) do
+    query
+    |> join(:left, [job: job], job2 in "arbejdq_jobs", on: job.id == job2.id, as: :job2)
+    |> select_merge([job2: job2], %{parameters: type(job2.parameters, Term)})
+  end
+
+  defp apply_opt({:include_result, true}, query) do
+    select_merge(query, [job: job], ^[:result])
+  end
+
+  defp apply_opt({:statuses, statuses}, query) do
+    where(query, [job: job], job.status in ^List.wrap(statuses))
+  end
+
+  defp apply_opt({:queue, queue_name}, query) do
+    where(query, [job: job], job.queue == ^queue_name)
+  end
+
+  defp apply_opt({:updated_before, datetime}, query) do
+    where(query, [job: job], job.status_updated < ^datetime)
+  end
+
+  defp apply_opt({:updated_after, datetime}, query) do
+    where(query, [job: job], job.status_updated > ^datetime)
+  end
+
+  defp apply_opt({:exclude_finished_export_jobs, max_allowed_age_hrs}, query) do
+    max_age_datetime = Timex.shift(Timex.now(), hours: -max_allowed_age_hrs)
+
+    where(
+      query,
+      [job: job],
+      not (job.worker_module == ^QarmaInspect.Exporter.V1 and
+             job.status == :done and
+             job.completion_time <= ^max_age_datetime)
     )
   end
 
-  @spec list_all :: %Ecto.Query{}
-  def list_all do
-    from(job in Job,
-      order_by: job.inserted_at
-    )
+  defp apply_opt({:expired_before, datetime}, query) do
+    where(query, [job: job], job.expiration_time < ^datetime)
   end
+
+  defp apply_opt({:jobs_to_show, amount}, query) do
+    limit(query, ^amount)
+  end
+
+  # It might worth to refactor worker_module filters to work with strings instead of atoms:
+  # in situations when worker module namespace removed from the system but it still has
+  # previous jobs in DB.
+  #
+  # defp apply_opt({:worker_module, worker_module}, query) when is_binary(worker_module) do
+  #   try do
+  #     worker_module
+  #     |> String.to_existing_atom()
+  #     |> then(&{:worker_module, &1})
+  #     |> apply_opt(query)
+  #   rescue
+  #     # If there is no necessary atom available then we can't
+  #     _ -> query
+  #   end
+  # end
+
+  defp apply_opt({:worker_module, worker_module}, query) when is_atom(worker_module) do
+    where(query, [job: job], job.worker_module == ^worker_module)
+  end
+
+  defp apply_opt(_, query), do: query
 end

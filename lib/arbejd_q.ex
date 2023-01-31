@@ -9,7 +9,10 @@ defmodule ArbejdQ do
 
   require Ecto.Query
 
-  @type job_opt :: {:resources, [ResourceRequirement.t()]}
+  @type job_opt ::
+          {:resources, [ResourceRequirement.t()]}
+          | {:expiration_time, DateTime.t()}
+
   @type job_opts :: [job_opt]
 
   @doc """
@@ -20,13 +23,13 @@ defmodule ArbejdQ do
   `parameters` is validated using `worker_module` and `{:error, :invalid_params}`
   is returned if the validation fails.
   """
-  @spec enqueue_job(String.t, atom, term, job_opts)
-  :: {:ok, Job.t} | {:error, Ecto.Changeset.t} | {:error, :invalid_params}
+  @spec enqueue_job(String.t(), atom, term, job_opts) ::
+          {:ok, Job.t()} | {:error, Ecto.Changeset.t()} | {:error, :invalid_params}
   def enqueue_job(queue, worker_module, parameters, opts \\ []) do
     with {:ok, _params} <- worker_module.validate_params(parameters),
-         {:ok, job} <- create_job(queue, worker_module, parameters, opts)
-    do
+         {:ok, job} <- create_job(queue, worker_module, parameters, opts) do
       scheduler_pid = Process.whereis(default_scheduler_name())
+
       if scheduler_pid != nil and Process.alive?(scheduler_pid) do
         ArbejdQ.Scheduler.poll_for_jobs(scheduler_pid)
       end
@@ -47,31 +50,39 @@ defmodule ArbejdQ do
   end
 
   @doc false
-  @spec create_job(String.t, atom, term, job_opts) :: {:ok, Job.t} | {:error, Ecto.Changeset.t}
+  @spec create_job(String.t(), atom, term, job_opts) ::
+          {:ok, Job.t()} | {:error, Ecto.Changeset.t()}
   def create_job(queue, worker_module, parameters, opts \\ []) do
-    case repo().transaction(Job.build(queue, worker_module, parameters, %{
-        status: :queued,
-        resource_requirements: Keyword.get(opts, :resources, [])
-      })) do
+    case repo().transaction(
+           Job.build(queue, worker_module, parameters, %{
+             status: :queued,
+             resource_requirements: Keyword.get(opts, :resources, []),
+             expiration_time: Keyword.get(opts, :expiration_time)
+           })
+         ) do
       {:ok, changes} -> {:ok, changes[:update]}
       {:error, _, changeset, _} -> {:error, changeset}
     end
   end
 
-  @spec get_job_parameters(Job.t | String.t) :: any
+  @spec get_job_parameters(Job.t() | String.t()) :: any
   def get_job_parameters(%Job{} = job) do
     get_job_parameters(job.id)
   end
+
   def get_job_parameters(job_id) when is_binary(job_id) do
-    Ecto.Query.from(job in "arbejdq_jobs", where: job.id == ^UUID.string_to_binary!(job_id), select: job.parameters)
+    Ecto.Query.from(job in "arbejdq_jobs",
+      where: job.id == ^UUID.string_to_binary!(job_id),
+      select: job.parameters
+    )
     |> repo().one()
-    |> :erlang.binary_to_term
+    |> :erlang.binary_to_term()
   end
 
   @doc """
   List all queued jobs within a queue.
   """
-  @spec list_queued_jobs(String.t, non_neg_integer) :: [Job.t]
+  @spec list_queued_jobs(String.t(), non_neg_integer) :: [Job.t()]
   def list_queued_jobs(queue, max_jobs) do
     Job.list_queued_jobs(queue, max_jobs)
     |> repo().all()
@@ -80,7 +91,7 @@ defmodule ArbejdQ do
   @doc """
   List all queued jobs within a queue.
   """
-  @spec list_queued_jobs(String.t) :: [Job.t]
+  @spec list_queued_jobs(String.t()) :: [Job.t()]
   def list_queued_jobs(queue) do
     Job.list_queued_jobs(queue)
     |> repo().all()
@@ -89,22 +100,25 @@ defmodule ArbejdQ do
   @doc """
   List all expired jobs within a queue.
   """
-  @spec list_expired_jobs(String.t) :: [Job.t]
+  @spec list_expired_jobs(String.t()) :: [Job.t()]
   def list_expired_jobs(queue) do
-    Job.list_expired_jobs(queue, Timex.now)
+    Job.list_expired_jobs(queue, Timex.now())
     |> repo().all()
   end
 
   @doc """
   Retrieve a job given its `job_id`.
   """
-  @spec get_job(String.t | Job.t) :: {:ok, Job.t} | {:error, :not_found}
+  @spec get_job(String.t() | Job.t()) :: {:ok, Job.t()} | {:error, :not_found}
   def get_job(%Job{} = job) do
     get_job(job.id)
   end
+
   def get_job(job_id) do
-    res = Job.get_job(job_id)
-          |> repo().all()
+    res =
+      Job.get_job(job_id)
+      |> repo().all()
+
     case res do
       [] -> {:error, :not_found}
       [job] -> {:ok, job}
@@ -121,22 +135,29 @@ defmodule ArbejdQ do
 
   Returns `{:ok, result}`, where `result` is the result of the job.
   """
-  @spec wait(String.t | Job.t, non_neg_integer | :infinity) :: {:ok, :failed | :done, any} | {:error, :timeout} | {:error, :not_found}
+  @spec wait(String.t() | Job.t(), non_neg_integer | :infinity) ::
+          {:ok, :failed | :done, any} | {:error, :timeout} | {:error, :not_found}
   def wait(job, timeout \\ :infinity)
   def wait(%Job{} = job, timeout), do: wait(job.id, timeout)
+
   def wait(job_id, timeout) do
-    with {:ok, job} <- get_job(job_id)
-    do
+    with {:ok, job} <- get_job(job_id) do
       case job.status do
-        :done -> {:ok, :done, job.result}
-        :failed -> {:ok, :failed, job.result}
+        :done ->
+          {:ok, :done, job.result}
+
+        :failed ->
+          {:ok, :failed, job.result}
+
         _ ->
           Process.sleep(1_000)
+
           new_timeout =
             case timeout do
               :infinity -> :infinity
               number -> number - 1_000
             end
+
           if new_timeout > 0 do
             wait(job_id, new_timeout)
           else
@@ -149,16 +170,19 @@ defmodule ArbejdQ do
     end
   end
 
-  @spec list_stale_jobs(String.t) :: [Job.t]
+  @spec list_stale_jobs(String.t()) :: [Job.t()]
   def list_stale_jobs(queue) do
     stale_period = stale_job_period()
-    Job.list_stale_jobs(queue, Timex.subtract(Timex.now, Timex.Duration.from_seconds(stale_period)))
+
+    queue
+    |> Job.list_stale_jobs(Timex.subtract(Timex.now(), Timex.Duration.from_seconds(stale_period)))
     |> repo().all
   end
 
-  @spec list_jobs() :: [Job.t]
-  def list_jobs do
-    Job.list_all
+  @spec list_jobs(Job.job_list_opts()) :: [Job.t()]
+  def list_jobs(job_list_opts \\ []) do
+    job_list_opts
+    |> Job.list()
     |> repo().all()
   end
 

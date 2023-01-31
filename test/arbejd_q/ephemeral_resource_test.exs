@@ -13,6 +13,7 @@ defmodule ArbejdQ.EphemeralResourceTest do
 
   defp initial_scheduler_state() do
     %{
+      failed_job_handler: nil,
       workers: [],
       poll_interval: 10_000,
       max_jobs: 3,
