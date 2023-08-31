@@ -44,22 +44,27 @@ defmodule ArbejdQ.SchedulerTest do
     )
   end
 
-  defp scheduler(tags) do
+  defp scheduler(tags, opts \\ []) do
     {:ok, pid} =
       Scheduler.start_link(
-        failed_job_handler: ArbejdQ.Test.FailureHandler,
-        poll_interval: 1,
-        max_jobs: 1,
-        queues: [
-          normal: [
+        Keyword.merge(
+          [
+            failed_job_handler: ArbejdQ.Test.FailureHandler,
+            poll_interval: 1,
             max_jobs: 1,
-            priority: 1
+            queues: [
+              normal: [
+                max_jobs: 1,
+                priority: 1
+              ],
+              high: [
+                max_jobs: 1,
+                priority: 10
+              ]
+            ]
           ],
-          high: [
-            max_jobs: 1,
-            priority: 10
-          ]
-        ]
+          opts
+        )
       )
 
     {:ok, failed_job_agent_pid} = ArbejdQ.Test.FailureHandler.start_link()
@@ -291,7 +296,9 @@ defmodule ArbejdQ.SchedulerTest do
       assert info == %{
                global: %{
                  total_workers: 3,
-                 used_workers: 0
+                 used_workers: 0,
+                 execution_enabled?: true,
+                 timer_enabled?: true
                },
                queues: %{
                  high: %{
@@ -304,6 +311,140 @@ defmodule ArbejdQ.SchedulerTest do
                  }
                }
              }
+    end
+  end
+
+  describe "Timer and Scheduler Configuration" do
+    test "Initial state has both timer and execution enabled by default" do
+      tags = scheduler(%{})
+      info = Scheduler.get_scheduler_info(tags.pid)
+
+      assert %{
+               global: %{
+                 execution_enabled?: true,
+                 timer_enabled?: true
+               }
+             } = info
+    end
+
+    test "Application environment controls execution" do
+      Application.put_env(:arbejd_q, :disable_execution, true)
+
+      tags = scheduler(%{})
+      info = Scheduler.get_scheduler_info(tags.pid)
+
+      Application.delete_env(:arbejd_q, :disable_execution)
+
+      assert %{
+               global: %{
+                 execution_enabled?: false,
+                 timer_enabled?: true
+               }
+             } = info
+    end
+
+    test "Application environment controls timer" do
+      Application.put_env(:arbejd_q, :disable_timer, true)
+
+      tags = scheduler(%{})
+      info = Scheduler.get_scheduler_info(tags.pid)
+
+      Application.delete_env(:arbejd_q, :disable_timer)
+
+      assert %{
+               global: %{
+                 execution_enabled?: true,
+                 timer_enabled?: false
+               }
+             } = info
+    end
+
+    test "Execution can be disabled as start option" do
+      tags = scheduler(%{}, disable_execution: true)
+      info = Scheduler.get_scheduler_info(tags.pid)
+
+      assert %{
+               global: %{
+                 execution_enabled?: false,
+                 timer_enabled?: true
+               }
+             } = info
+    end
+
+    test "Timer can be disabled as start option" do
+      tags = scheduler(%{}, disable_timer: true)
+      info = Scheduler.get_scheduler_info(tags.pid)
+
+      assert %{
+               global: %{
+                 execution_enabled?: true,
+                 timer_enabled?: false
+               }
+             } = info
+    end
+
+    test "execution: start option overrides application env -- 1" do
+      Application.put_env(:arbejd_q, :disable_execution, false)
+
+      tags = scheduler(%{}, disable_execution: true)
+      info = Scheduler.get_scheduler_info(tags.pid)
+
+      Application.delete_env(:arbejd_q, :disable_execution)
+
+      assert %{
+               global: %{
+                 execution_enabled?: false,
+                 timer_enabled?: true
+               }
+             } = info
+    end
+
+    test "execution: start option overrides application env -- 2" do
+      Application.put_env(:arbejd_q, :disable_execution, true)
+
+      tags = scheduler(%{}, disable_execution: false)
+      info = Scheduler.get_scheduler_info(tags.pid)
+
+      Application.delete_env(:arbejd_q, :disable_execution)
+
+      assert %{
+               global: %{
+                 execution_enabled?: true,
+                 timer_enabled?: true
+               }
+             } = info
+    end
+
+    test "timer: start option overrides application env -- 1" do
+      Application.put_env(:arbejd_q, :disable_timer, false)
+
+      tags = scheduler(%{}, disable_timer: true)
+      info = Scheduler.get_scheduler_info(tags.pid)
+
+      Application.delete_env(:arbejd_q, :disable_timer)
+
+      assert %{
+               global: %{
+                 execution_enabled?: true,
+                 timer_enabled?: false
+               }
+             } = info
+    end
+
+    test "timer: start option overrides application env -- 2" do
+      Application.put_env(:arbejd_q, :disable_timer, true)
+
+      tags = scheduler(%{}, disable_timer: false)
+      info = Scheduler.get_scheduler_info(tags.pid)
+
+      Application.delete_env(:arbejd_q, :disable_timer)
+
+      assert %{
+               global: %{
+                 execution_enabled?: true,
+                 timer_enabled?: true
+               }
+             } = info
     end
   end
 end

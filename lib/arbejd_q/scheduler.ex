@@ -27,6 +27,8 @@ defmodule ArbejdQ.Scheduler do
           | {:max_jobs, non_neg_integer()}
           | {:poll_interval, non_neg_integer()}
           | {:failed_job_handler, module() | nil}
+          | {:disable_timer, boolean()}
+          | {:disable_execution, boolean()}
   @type opts :: [opt]
 
   @typep worker :: %{
@@ -51,7 +53,9 @@ defmodule ArbejdQ.Scheduler do
 
   @type global_scheduler_info :: %{
           total_workers: non_neg_integer,
-          used_workers: non_neg_integer
+          used_workers: non_neg_integer,
+          execution_enabled?: boolean,
+          timer_enabled?: boolean
         }
 
   @type per_queue_scheduler_info :: %{
@@ -381,11 +385,13 @@ defmodule ArbejdQ.Scheduler do
     state
   end
 
-  @spec calculate_worker_numbers(state) :: global_scheduler_info
-  defp calculate_worker_numbers(state) do
+  @spec calculate_global_scheduler_info(state) :: global_scheduler_info
+  defp calculate_global_scheduler_info(state) do
     %{
       total_workers: max_workers(state),
-      used_workers: worker_count(state)
+      used_workers: worker_count(state),
+      execution_enabled?: not state.disable_execution,
+      timer_enabled?: not state.disable_timer
     }
   end
 
@@ -408,14 +414,14 @@ defmodule ArbejdQ.Scheduler do
       |> Map.new()
 
     %{
-      global: calculate_worker_numbers(state),
+      global: calculate_global_scheduler_info(state),
       queues: queues
     }
   end
 
   @spec fill_queue(state, {atom, queue_config}) :: state
   defp fill_queue(state, {queue, config}) do
-    workers = calculate_worker_numbers(state)
+    workers = calculate_global_scheduler_info(state)
 
     total_workers = workers.total_workers
     used_workers = workers.used_workers
@@ -587,14 +593,25 @@ defmodule ArbejdQ.Scheduler do
     poll_interval = Keyword.get(opts, :poll_interval, 30)
     failed_job_handler = Keyword.get(opts, :failed_job_handler, nil)
 
-    Map.merge(
-      state,
+    opts_to_state =
       %{
         max_jobs: max_jobs,
         poll_interval: poll_interval,
         queues: queues,
         failed_job_handler: failed_job_handler
       }
-    )
+      |> add_if_exists(opts, :disable_timer)
+      |> add_if_exists(opts, :disable_execution)
+
+    Map.merge(state, opts_to_state)
+  end
+
+  @spec add_if_exists(map(), opts(), atom()) :: map()
+  defp add_if_exists(map, opts, key) do
+    if Keyword.has_key?(opts, key) do
+      Map.put(map, key, Keyword.get(opts, key))
+    else
+      map
+    end
   end
 end
