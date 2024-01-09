@@ -59,7 +59,7 @@ defmodule ArbejdQ.Execution do
         end
 
       {:error, :not_found} ->
-        Logger.warn(
+        Logger.warning(
           "ArbejdQ worker #{inspect(self())}: Job #{job.id} not found when trying to commit result"
         )
 
@@ -69,7 +69,6 @@ defmodule ArbejdQ.Execution do
 
   @spec sync_execute(module(), String.t(), map()) :: {:ok, any()} | {:error, any()}
   def sync_execute(worker_module, job_id, parameters) do
-
     try do
       job_result = worker_module.run(job_id, parameters)
       {:ok, job_result}
@@ -77,7 +76,6 @@ defmodule ArbejdQ.Execution do
       error ->
         {:error, error}
     end
-
   end
 
   @spec assign_worker_pid(Job.t(), pid) :: Job.t()
