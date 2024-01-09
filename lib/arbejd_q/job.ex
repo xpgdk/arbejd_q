@@ -130,7 +130,7 @@ defmodule ArbejdQ.Job do
     |> Ecto.Multi.run(:update, fn _repo, changes ->
       job = changes[:insert]
 
-      Ecto.Query.from(job in "arbejdq_jobs", where: job.id == ^UUID.string_to_binary!(job.id))
+      Ecto.Query.from(job in "arbejdq_jobs", where: job.id == ^Uniq.UUID.string_to_binary!(job.id))
       |> ArbejdQ.repo().update_all(set: [parameters: :erlang.term_to_binary(parameters)])
 
       {:ok, job}

@@ -2,14 +2,16 @@ defmodule ArbejdQ.Mixfile do
   use Mix.Project
 
   def project do
-    [app: :arbejd_q,
-     version: "3.1.0",
-     elixir: "~> 1.12",
-     elixirc_paths: elixirc_paths(Mix.env()),
-     build_embedded: Mix.env == :prod,
-     start_permanent: Mix.env == :prod,
-     deps: deps(),
-     dialyzer: [plt_add_apps: [:ecto]]]
+    [
+      app: :arbejd_q,
+      version: "3.1.1",
+      elixir: "~> 1.12",
+      elixirc_paths: elixirc_paths(Mix.env()),
+      build_embedded: Mix.env() == :prod,
+      start_permanent: Mix.env() == :prod,
+      deps: deps(),
+      dialyzer: [plt_add_apps: [:ecto]]
+    ]
   end
 
   defp elixirc_paths(:test), do: ["lib", "test/support"]
@@ -34,15 +36,15 @@ defmodule ArbejdQ.Mixfile do
   # Type "mix help deps" for more examples and options
   defp deps do
     [
-      {:ecto, "~> 3.7"},
-      {:ecto_sql, "~> 3.7"},
+      {:ecto, "~> 3.11"},
+      {:ecto_sql, "~> 3.11"},
       {:timex, "~> 3.7"},
-      {:elixir_uuid, "~> 1.2"},
+      {:uniq, "~> 0.6"},
       {:typed_ecto_schema, "~> 0.4.0"},
       {:jason, "~> 1.2"},
-      {:postgrex, "~> 0.15.10", only: :test},
-      {:dialyxir, "~> 1.0.0-rc.3", only: :dev, runtime: false},
-      {:ex_doc, "~> 0.25.2", only: :dev, runtime: false},
+      {:postgrex, "~> 0.15"},
+      {:dialyxir, "~> 1.0", only: :dev, runtime: false},
+      {:ex_doc, "~> 0.25", only: :dev, runtime: false}
     ]
   end
 end
