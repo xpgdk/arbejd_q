@@ -39,7 +39,7 @@ defmodule ArbejdQ.Mixfile do
       {:ecto, "~> 3.11"},
       {:ecto_sql, "~> 3.11"},
       {:timex, "~> 3.7"},
-      {:elixir_uuid, "~> 1.2"},
+      {:uniq, "~> 0.6"},
       {:typed_ecto_schema, "~> 0.4.0"},
       {:jason, "~> 1.2"},
       {:postgrex, "~> 0.15"},

@@ -101,7 +101,7 @@ defmodule ArbejdQ do
 
   def get_job_parameters(job_id) when is_binary(job_id) do
     Ecto.Query.from(job in "arbejdq_jobs",
-      where: job.id == ^UUID.string_to_binary!(job_id),
+      where: job.id == ^Uniq.UUID.string_to_binary!(job_id),
       select: job.parameters
     )
     |> repo().one()
