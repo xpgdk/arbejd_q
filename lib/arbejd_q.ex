@@ -187,10 +187,15 @@ defmodule ArbejdQ do
               number -> number - 1_000
             end
 
-          if new_timeout > 0 do
-            wait(job_id, new_timeout)
-          else
-            :infinity
+          cond do
+            new_timeout == :infinity ->
+              wait(job_id, new_timeout)
+
+            is_number(new_timeout) and new_timeout > 0 ->
+              wait(job_id, new_timeout)
+
+            is_number(new_timeout) ->
+              {:error, :timeout}
           end
       end
     else
