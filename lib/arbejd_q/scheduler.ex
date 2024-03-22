@@ -517,7 +517,7 @@ defmodule ArbejdQ.Scheduler do
 
   defp restart_timer(state), do: state
 
-  defp refresh_job_period, do: round(ArbejdQ.stale_job_period() / 2)
+  defp refresh_job_period, do: round(ArbejdQ.stale_job_period() / 3)
 
   @spec queue_workers(state, atom) :: [worker]
   defp queue_workers(state, queue) do
